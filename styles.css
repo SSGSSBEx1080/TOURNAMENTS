@@ -1359,7 +1359,7 @@ h1,h2,.title-row{text-wrap:balance}
   /* настоящий подиум: 2-е слева, чемпион по центру и выше, 3-е справа */
   .board-podium{grid-template-columns:1fr 1.14fr 1fr;align-items:end}
   .podium-slot.place-2{order:1}
-  .podium-slot.place-1{order:2;transform:translateY(-10px);padding:18px 16px;min-height:100%}
+  .podium-slot.place-1{order:2;transform:translateY(-10px);padding:18px 16px}
   .podium-slot.place-3{order:3}
 }
 
