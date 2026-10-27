@@ -75,14 +75,6 @@
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
-  function mskToday() {
-    try {
-      return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
-    } catch (e) {
-      var d = new Date();
-      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    }
-  }
   function mskClock() {
     try {
       return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }).format(new Date());
@@ -108,11 +100,6 @@
     return '';
   }
   var WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
-  function weekday(iso) {
-    var p = String(iso).slice(0, 10).split('-');
-    var d = new Date(+p[0], +p[1] - 1, +p[2]);
-    return WEEKDAYS[d.getDay()] || '';
-  }
   function parseStamp(v) {
     if (v == null || v === '') return null;
     if (v instanceof Date) return v;
@@ -146,6 +133,9 @@
   }
   function fmtPoints(v) {
     return String(v).replace('.', ',').replace(/,0$/, '');
+  }
+  function pointsLabel(d) {
+    return (compOf(d).seats || 1) > 1 ? '1,5 / 1 / 0,5' : '3 / 2 / 1';
   }
   function placePoints(d, place) {
     var base = (EVENT.scoring || [3, 2, 1])[place - 1] || 0;
@@ -518,12 +508,12 @@
       var avatars = list.slice(0, 3).map(function (p) {
         return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '" title="' + esc(p.nick) + '"><span>' + esc(p.initials) + '</span></span>';
       }).join('');
-      return '<article class="disc-card" data-disc-id="' + d.id + '" data-tilt tabindex="0" role="button" aria-label="' + esc(d.name + ' ' + d.mode + ', ' + d.format) + '" style="--a:' + d.accent + ';--b:' + d.accent2 + ';--i:' + i + '">' +
-        '<span class="disc-watermark" aria-hidden="true">' + d.icon + '</span>' +
+      return '<article class="disc-card" data-disc-id="' + d.id + '" tabindex="0" role="button" aria-label="' + esc(d.name + ' ' + d.mode + ', ' + d.format) + '" style="--a:' + d.accent + ';--b:' + d.accent2 + ';--i:' + i + '">' +
+        (d.art ? '<img class="disc-art" src="' + d.art + '" alt="" width="640" height="360" loading="lazy" decoding="async">' : '') +
         '<div class="disc-top"><span class="disc-icon" aria-hidden="true">' + d.icon + '</span>' +
         '<span class="disc-status ' + badge.cls + '">' + badge.text + '</span></div>' +
         '<div class="disc-name">' + esc(d.name) + '<span>' + esc(d.mode) + '</span></div>' +
-        '<div class="disc-meta"><span class="tag">~' + d.time + ' MSK</span><span class="tag">' + esc(isBoard(d) ? 'заезд' : seatLabel(d)) + '</span><span class="tag is-gold">' + esc(isBoard(d) ? '3 / 2 / 1' : seriesOf(d)) + '</span></div>' +
+        '<div class="disc-meta"><span class="tag">~' + d.time + ' MSK</span><span class="tag">' + esc(isBoard(d) ? 'заезд' : seatLabel(d)) + '</span><span class="tag is-gold">' + esc(isBoard(d) ? pointsLabel(d) : seriesOf(d)) + '</span></div>' +
         '<div class="disc-foot"><div class="disc-avatars">' + avatars + '</div><span class="disc-count">' + list.length + ' / ' + state.players.length + '</span>' +
         '<span class="disc-cta">Открыть <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>' +
         '</article>';
@@ -546,47 +536,6 @@
   }
 
   /* ─────────────────────────── bracket ─────────────────────────── */
-  function buildRounds(d) {
-    var st = bracketState(d.id);
-    var pool = participants(d).map(function (p) { return p.id; });
-    if (!pool.length) return [[{ a: null, b: null, winner: null }]];
-    var size = 2;
-    while (size < Math.max(2, pool.length)) size *= 2;
-    var byes = size - pool.length;
-    var order = seededShuffle(pool, st.seed);
-    var first = [];
-    // пустые слоты (bye) всегда в паре с бойцом — без «матчей» null vs null
-    for (var b = 0; b < byes; b++) {
-      var solo = order.pop();
-      first.push(b % 2 ? { a: solo, b: null, winner: null } : { a: null, b: solo, winner: null });
-    }
-    while (order.length) first.push({ a: order.pop() || null, b: order.pop() || null, winner: null });
-    first = seededShuffle(first, (st.seed ^ 0x9e3779b9) >>> 0);
-    var rounds = [first];
-    while (rounds[rounds.length - 1].length > 1) {
-      var prev = rounds[rounds.length - 1], next = [];
-      for (var j = 0; j < prev.length; j += 2) next.push({ a: null, b: null, winner: null });
-      rounds.push(next);
-    }
-    rounds.forEach(function (matches, r) {
-      matches.forEach(function (m, i) {
-        if (r > 0) {
-          var pa = rounds[r - 1][i * 2], pb = rounds[r - 1][i * 2 + 1];
-          m.a = pa ? pa.winner : null;
-          m.b = pb ? pb.winner : null;
-        }
-        /* BYE авто-проходит только в первом раунде: дальше пустой слот —
-           это ещё не сыгранный матч, а не свободная путёвка. */
-        if (r === 0 && m.a && !m.b) m.winner = m.a;
-        else if (r === 0 && !m.a && m.b) m.winner = m.b;
-        else if (m.a && m.b) {
-          var pick = st.winners[r + '-' + i];
-          if (pick === m.a || pick === m.b) m.winner = pick;
-        }
-      });
-    });
-    return rounds;
-  }
 
   function roundLabel(count) {
     if (count === 1) return 'Финал';
@@ -640,20 +589,34 @@
   }
 
   function matchRow(d, m, r, i, seed) {
+    /* В первом раунде матч с одним участником — это bye: путёвка выдаётся
+       автоматически, кликать нечего. В следующих раундах «один участник» —
+       это ещё не сыгранный предыдущий матч, ждём соперника. */
+    var bye = r === 0 && (!!(m.a && !m.b) || !!(!m.a && m.b));
+    var waiting = !bye && (!!(m.a && !m.b) || !!(!m.a && m.b));
     return [m.a, m.b].map(function (key, side) {
       var e = key ? entrantByKey(d, key) : null;
       var win = key && m.winner === key;
       if (!e) {
         return '<div class="match-row is-empty"><span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
-          '<span class="match-name">Ожидание</span><span class="match-bye">' + (side === 0 && m.b ? 'bye' : '') + '</span></div>';
+          '<span class="match-name">' + (bye ? 'свободно' : 'Ожидание') + '</span>' +
+          '<span class="match-bye">' + (bye ? 'bye' : '') + '</span></div>';
       }
       var first = e.players[0] || {};
+      var inner = '<span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
+        '<span class="match-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
+        (bye
+          ? '<span class="match-bye" title="Проход без соперника">bye</span>'
+          : '<span class="match-score" aria-hidden="true">✓</span>');
+      if (bye) {
+        return '<div class="match-row is-winner is-auto" title="' + esc(e.label) + ' — проходит без соперника">' + inner + '</div>';
+      }
+      if (waiting) {
+        return '<div class="match-row is-waiting" title="' + esc(e.label) + ' — ждёт соперника из предыдущего раунда">' + inner + '</div>';
+      }
       return '<button class="match-row' + (win ? ' is-winner' : '') + (e.team ? ' is-team' : '') + '" type="button" data-entrant="' + esc(e.key) + '"' +
         ' data-player="' + esc(first.id || '') + '" data-key="' + r + '-' + i + '"' +
-        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' +
-        '<span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
-        '<span class="match-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
-        '<span class="match-score" aria-hidden="true">✓</span></button>';
+        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' + inner + '</button>';
     }).join('');
   }
 
@@ -852,6 +815,11 @@
     state.bracketId = d.id;
     var boardMode = isBoard(d);
     document.body.classList.toggle('is-board-mode', boardMode);
+    var shell = $('#comp-shell');
+    if (shell) {
+      if (d.art) shell.style.setProperty('--art', 'url("' + d.art + '")');
+      else shell.style.removeProperty('--art');
+    }
     var body = $('#bracket-body'), view = $('#board-view');
     if (body) body.hidden = boardMode;
     if (view) view.hidden = !boardMode;
@@ -861,8 +829,11 @@
     var sel = $('#bracket-select');
     if (sel && sel.value !== d.id) sel.value = d.id;
     renderCompHead(d);
-    if (boardMode) renderBoard(d);
-    else { renderBracket(d); renderChampion(d); }
+    if (boardMode) {
+      renderBoard(d);
+      var champSlot = $('#champion-slot');
+      if (champSlot) champSlot.innerHTML = '';
+    } else { renderBracket(d); renderChampion(d); }
   }
 
   function boardPick(key) {
@@ -1032,7 +1003,7 @@
       var duoCount = ds.filter(function (d) { return d.type === 'duo'; }).length;
       var joined = parseStamp(p.joined);
       var rank = state.players.slice().sort(function (a, b) { return (b.disciplines || []).length - (a.disciplines || []).length; }).findIndex(function (x) { return x.id === p.id; }) + 1;
-      return '<article class="player-card" data-player="' + p.id + '" data-tilt tabindex="0" role="button" aria-label="Профиль ' + esc(p.nick) + '" style="--c1:' + p.c1 + ';--c2:' + p.c2 + ';--i:' + i + '">' +
+      return '<article class="player-card" data-player="' + p.id + '" tabindex="0" role="button" aria-label="Профиль ' + esc(p.nick) + '" style="--c1:' + p.c1 + ';--c2:' + p.c2 + ';--i:' + i + '">' +
         '<span class="pl-rank">#' + rank + '</span>' +
         '<div class="pl-top"><span class="avatar pl-avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' +
         '<div class="pl-id"><div class="pl-nick">' + esc(p.nick) + '</div><div class="pl-name">' + esc(p.name) + '</div></div>' +
@@ -1040,7 +1011,7 @@
         '<div class="pl-bar"><i style="--w:' + Math.round(ds.length / DISC.length * 100) + '%"></i></div>' +
         '<div class="pl-tags">' + top + more + '</div>' +
         '<p class="pl-quote">' + (p.quote ? '«' + esc(p.quote) + '»' : 'Без пожеланий — просто пришёл побеждать.') + '</p>' +
-        '<div class="pl-foot"><span>в игре с <b>' + (joined ? mskShort(joined) : '—') + '</b></span><span>' + duoCount + ' ' + plural(duoCount, ['дуо', 'дуо', 'дуо']) + ' · ' + (p.partners && (p.partners.minecraft || p.partners.cs2 || p.partners.dota2) ? 'есть тиммейт' : 'ищет пару') + '</span></div>' +
+        '<div class="pl-foot"><span>заявка <b>' + (joined ? mskShort(joined) : '—') + '</b></span><span>' + duoCount + ' ' + plural(duoCount, ['дуо', 'дуо', 'дуо']) + ' · ' + (p.partners && (p.partners.minecraft || p.partners.cs2 || p.partners.dota2) ? 'есть тиммейт' : 'ищет пару') + '</span></div>' +
         '</article>';
     }).join('');
     var empty = $('#roster-empty');
@@ -1325,11 +1296,6 @@
     }
   }
 
-  function fmtDelta(ms) {
-    var s = Math.max(0, Math.floor(ms / 1000));
-    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
-    return (d > 0 ? d + 'д ' : '') + pad(h) + ':' + pad(m) + ':' + pad(sec);
-  }
   function tickClocks() {
     var clock = $('#event-clock');
     if (clock) clock.innerHTML = mskClock() + '<small>MSK</small>';
@@ -1415,7 +1381,8 @@
     if (!d) return;
     var list = participants(d);
     var c = compOf(d);
-    var html = '<div class="md-hero" style="--a:' + d.accent + ';--b:' + d.accent2 + '">' +
+    var html = '<div class="md-hero' + (d.art ? ' has-art' : '') + '" style="--a:' + d.accent + ';--b:' + d.accent2 + '">' +
+      (d.art ? '<img class="md-art" src="' + d.art + '" alt="" width="640" height="360" decoding="async">' : '') +
       '<span class="md-icon" aria-hidden="true">' + d.icon + '</span>' +
       '<div><span class="md-kicker">слот ' + d.order + ' · ~' + d.time + ' MSK · даты уточняются</span>' +
       '<h3 class="md-title">' + esc(d.name) + ' <span style="color:' + d.accent + '">' + esc(d.mode) + '</span></h3>' +
@@ -1451,7 +1418,7 @@
     var html = '<div class="md-hero" style="--a:' + p.c1 + ';--b:' + p.c2 + '">' +
       '<span class="avatar md-avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' +
       '<div><span class="md-kicker">боец · #' + rank + ' по арсеналу</span>' +
-      '<h3 class="md-title">' + esc(p.nick) + '</h3><div class="md-sub">' + esc(p.name) + (joined ? ' · в игре с ' + mskShort(joined) : '') + '</div></div></div>' +
+      '<h3 class="md-title">' + esc(p.nick) + '</h3><div class="md-sub">' + esc(p.name) + (joined ? ' · заявка ' + mskShort(joined) : '') + '</div></div></div>' +
       '<div class="md-stats"><div class="md-stat"><b>' + ds.length + '</b><span>арен</span></div><div class="md-stat"><b>' + duo.length + '</b><span>дуо</span></div><div class="md-stat"><b>' + (p.quote ? '✓' : '—') + '</b><span>пожелание</span></div></div>' +
       (p.quote ? '<div class="md-quote">«' + esc(p.quote) + '»</div>' : '') +
       '<div class="md-section"><h4>Дисциплины</h4><div class="md-chips">' + ds.map(function (d) {
