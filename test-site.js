@@ -122,6 +122,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('mini reg = 88', $('#mini-registrations').textContent === String(TOTAL_SNAP), $('#mini-registrations').textContent);
   check('donut solo/duo', $('#donut-solo').textContent === '69' && $('#donut-duo').textContent === '19', $('#donut-solo').textContent + '/' + $('#donut-duo').textContent);
   check('facts = 3', qa('#facts-row .fact') === 3, qa('#facts-row .fact'));
+  check('facts dates parsed', !/undefined|Invalid/.test($('#facts-row').textContent), $('#facts-row').textContent.replace(/\s+/g, ' ').slice(0, 80));
+  check('day heads clean', !/(понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)\s*·/.test($('.day-name').textContent), $('.day-head').textContent.replace(/\s+/g, ' '));
   check('pairs >= 3', qa('#pairs-grid .pair-card') >= 3, qa('#pairs-grid .pair-card'));
   check('duo score > 0', parseInt($('#synergy-value').textContent, 10) > 0, $('#synergy-value').textContent);
   check('duo shared chips', qa('#synergy-shared .tag') > 0, qa('#synergy-shared .tag'));
@@ -149,6 +151,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('modal closes', $('#modal').hidden, '');
 
   // ── bracket play ───────────────────────────────────────────────────
+  check('bracket starts without champion', /Финал ещё не сыгран/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 60));
   const progressBefore = $('#bracket-progress').textContent;
   const playable = $('#bracket-board .match-row[data-player]');
   playable.click();
