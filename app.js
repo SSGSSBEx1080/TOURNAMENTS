@@ -600,7 +600,7 @@
       if (!e) {
         return '<div class="match-row is-empty"><span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
           '<span class="match-name">' + (bye ? 'свободно' : 'Ожидание') + '</span>' +
-          '<span class="match-bye">' + (bye ? 'bye' : '') + '</span></div>';
+          '<span class="match-bye"></span></div>';
       }
       var first = e.players[0] || {};
       var inner = '<span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
