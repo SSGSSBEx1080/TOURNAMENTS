@@ -1,13 +1,26 @@
 {
-  "name": "GAMEpiada — турнирная арена",
+  "name": "GAMEpiada — небесная турнирная арена",
   "short_name": "GAMEpiada",
-  "description": "Небесная игровая олимпиада: 17 дисциплин, турнирные сетки и общий зачёт.",
-  "start_url": ".",
+  "description": "Турнир GAMEpiada: 17 дисциплин, 8 бойцов, живые сетки, дуо-синергия и статистика из Google Таблицы.",
+  "id": "/TOURNAMENTS/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#05070f",
-  "theme_color": "#05070f",
+  "orientation": "portrait-primary",
+  "background_color": "#04060d",
+  "theme_color": "#04060d",
   "lang": "ru",
+  "dir": "ltr",
+  "categories": ["games", "sports", "entertainment"],
   "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Сетка", "short_name": "Сетка", "url": "./#bracket" },
+    { "name": "Состав", "short_name": "Состав", "url": "./#roster" },
+    { "name": "Расписание", "short_name": "Календарь", "url": "./#schedule" },
+    { "name": "Заявка", "short_name": "Заявка", "url": "./#join" }
   ]
 }

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ssgssbex1080.github.io/TOURNAMENTS/sitemap.xml
