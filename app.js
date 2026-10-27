@@ -1523,18 +1523,25 @@
     var excluding = false;
     tokens.forEach(function (t) {
       if (t === 'except' || t === 'без') { excluding = true; return; }
+      /* Тир-матчинг: точное совпадение важнее вхождения. Иначе «Dota 2 | 1x1»
+         цепляет и Dota 2 | 2x2 (общее имя), а «Minecraft PVP» — дуо-спидран. */
+      var best = 0, hits = [];
       DISC.forEach(function (d) {
         var keys = discTokens(d).map(norm);
-        var hit = keys.some(function (k) {
-          if (!k) return false;
-          if (t === k) return true;
-          if (k.indexOf(t) >= 0 && t.length >= 4) return true;
-          return t.indexOf(k) >= 0 && (k.length >= 4 || k.indexOf(' ') >= 0);
+        var tier = 0;
+        keys.forEach(function (k) {
+          if (!k) return;
+          if (t === k) tier = 3;
+          else if (k.indexOf(t) >= 0 && t.length >= 4) tier = Math.max(tier, 2);
+          else if (t.indexOf(k) >= 0 && k.length >= 5 && (k.indexOf(' ') >= 0 || /\d/.test(k))) tier = Math.max(tier, 1);
         });
-        if (hit) {
-          if (excluding) ids = ids.filter(function (x) { return x !== d.id; });
-          else if (ids.indexOf(d.id) < 0) ids.push(d.id);
-        }
+        if (!tier) return;
+        if (tier > best) { best = tier; hits = [d.id]; }
+        else if (tier === best) hits.push(d.id);
+      });
+      hits.forEach(function (id) {
+        if (excluding) ids = ids.filter(function (x) { return x !== id; });
+        else if (ids.indexOf(id) < 0) ids.push(id);
       });
     });
     return ids;

@@ -92,6 +92,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       ].map((v) => ({ v, f: v }))
     });
     rows.push({ c: [{ v: '27.10.2026 19:30:00' }, { v: 'Все, кроме fn, mk' }, { v: 'AllNick' }, { v: 'все, кроме fn, mk' }, { v: 'ДА' }, { v: '' }, { v: '' }, { v: '' }, { v: '' }] });
+    // ловушка для матчера: «Dota 2 | 2х2» не должен цеплять Dota 2 | 1х1,
+    // а «Minecraft PVP» — дуо-спидран
+    rows.push({ c: [{ v: '27.10.2026 19:40:00' }, { v: 'Проверка Парсера' }, { v: 'ParserProbe' }, { v: 'Dota 2 | 2х2, Minecraft PVP 1v1' }, { v: 'ДА' }, { v: '' }, { v: '' }, { v: '' }, { v: '' }] });
     return {
       status: 'ok',
       table: {
@@ -195,10 +198,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── live JSONP ─────────────────────────────────────────────────────
   await sleep(700);
   check('jsonp requested', liveScripts.length > 0, liveScripts[0] && liveScripts[0].slice(0, 80));
-  check('live players = 10', qa('#roster-grid .player-card') === 10, qa('#roster-grid .player-card'));
+  check('live players = 11', qa('#roster-grid .player-card') === 11, qa('#roster-grid .player-card'));
+  var probe = window.GP.state.players.filter(function (p) { return p.nick === 'ParserProbe'; })[0];
+  check('live matcher precision', !!probe && probe.disciplines.length === 2 && probe.disciplines.indexOf('dota11') < 0, probe ? probe.disciplines.join(',') : 'no probe');
   check('live new nick visible', $('#roster-grid').textContent.includes('TestNick'), '');
   check('live all-except parsed', $('#roster-grid').textContent.includes('AllNick'), '');
-  check('live status', /Google Таблица/.test($('#data-text').textContent) && /10 ответов/.test($('#data-text').textContent), $('#data-text').textContent);
+  check('live status', /Google Таблица/.test($('#data-text').textContent) && /11 ответов/.test($('#data-text').textContent), $('#data-text').textContent);
   check('live stats total', Number($('#stats-total').textContent) > 88, $('#stats-total').textContent);
   check('live matrix rows', qa('#matrix-scroll tbody tr') === 17, qa('#matrix-scroll tbody tr'));
 
