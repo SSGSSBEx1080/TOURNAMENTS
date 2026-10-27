@@ -131,6 +131,12 @@
     var a = discStart(d), b = discEnd(d);
     return Math.max(0, Math.round((b - a) / 60000));
   }
+  function durationLabel(d) {
+    var m = durationMin(d);
+    if (m < 60) return m + 'м';
+    var h = Math.floor(m / 60), rest = m % 60;
+    return h + 'ч' + (rest ? ' ' + rest + 'м' : '');
+  }
   function dateBadge(d) {
     var today = mskToday();
     var now = Date.now();
@@ -659,9 +665,12 @@
         if (m.a && m.b) { playable++; if (m.winner) decided++; }
       });
     });
+    /* знаменатель — сколько матчей вообще нужно сыграть (n−1), а не сколько
+       уже заполнено: иначе «0/2» превращается в «1/3» и путает */
+    var expected = Math.max(1, participants(d).length - 1);
     var prog = $('#bracket-progress'), fill = $('#bracket-progress-fill');
-    if (prog) prog.textContent = decided + ' / ' + Math.max(playable, 1);
-    if (fill) fill.style.setProperty('--w', Math.round(decided / Math.max(playable, 1) * 100) + '%');
+    if (prog) prog.textContent = decided + ' / ' + expected;
+    if (fill) fill.style.setProperty('--w', Math.round(decided / expected * 100) + '%');
     var sel = $('#bracket-select');
     if (sel && sel.value !== d.id) sel.value = d.id;
     requestAnimationFrame(function () { drawBracketLines(rounds); });
@@ -1105,7 +1114,7 @@
           return '<button class="slot" type="button" data-disc-id="' + d.id + '" style="--a:' + d.accent + '">' +
             '<span class="slot-time">' + d.start + '</span><span class="slot-icon" aria-hidden="true">' + d.icon + '</span>' +
             '<span class="slot-name">' + esc(d.name) + ' ' + esc(d.mode) + '<small>' + esc(d.format) + '</small></span>' +
-            '<span class="slot-dur">' + durationMin(d) + 'м</span></button>';
+            '<span class="slot-dur">' + durationLabel(d) + '</span></button>';
         }).join('') : '<div class="slot-catchup"><span class="slot-time">ALL DAY</span><span class="slot-icon" aria-hidden="true">⏳</span><span class="slot-name">Окно доигрывания<small>перенесённые матчи · по согласованию</small></span><span class="slot-dur">1д</span></div>') + '</div></div>';
     }).join('');
 
@@ -1221,7 +1230,7 @@
       '<div class="md-sub">' + esc(d.format) + ' · ' + esc(d.bo) + ' · ' + (d.type === 'duo' ? 'дуо-режим' : 'соло') + '</div></div></div>' +
       '<div class="md-meta"><div class="md-meta-item"><small>дата</small><b>' + weekday(d.date) + ', ' + dateLabel(d.date) + '</b></div>' +
       '<div class="md-meta-item"><small>время</small><b>' + d.start + '–' + d.end + ' MSK</b></div>' +
-      '<div class="md-meta-item"><small>формат</small><b>' + esc(d.bo) + ' · ' + (durationMin(d)) + ' мин</b></div>' +
+      '<div class="md-meta-item"><small>формат</small><b>' + esc(d.bo) + ' · ' + durationLabel(d) + '</b></div>' +
       '<div class="md-meta-item"><small>участники</small><b>' + list.length + ' из ' + state.players.length + '</b></div></div>' +
       '<div class="md-section"><h4>Правила</h4><div class="md-rules">' + esc(d.rules) + '</div></div>' +
       '<div class="md-section"><h4>Заявились</h4><div class="md-people">' + (list.length ? list.map(function (p) {
