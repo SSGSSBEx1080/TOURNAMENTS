@@ -2157,7 +2157,8 @@
     renderAll();
     setDataStatus('Снимок формы · ' + state.players.length + ' ' + plural(state.players.length, ['ответ', 'ответа', 'ответов']), '');
     tickClocks();
-    setInterval(tickClocks, 1000);
+    /* в фоновой вкладке часы и статус не пересчитываем — экономим батарею */
+    setInterval(function () { if (!document.hidden) tickClocks(); }, 1000);
     loadLive(false);
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
       window.addEventListener('load', function () {
