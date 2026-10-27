@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>GAMEpiada 🏆 — турнирная арена сезона I</title>
-<meta name="description" content="GAMEpiada — небесная игровая олимпиада: 17 дисциплин, 8 бойцов, интерактивные сетки, живой состав из Google Таблицы и один трон. 27 октября — 1 ноября 2026.">
+<title>GAMEpiada 🏆 — киберспортивная арена сезона I</title>
+<meta name="description" content="GAMEpiada — мультиигровой турнир: 17 дисциплин, 8 бойцов, сетки и заезды по регламенту, живой состав из Google Таблицы. Даты уточняются.">
 <meta name="author" content="GAMEpiada">
 <meta name="theme-color" content="#04060d" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f6f2e9" media="(prefers-color-scheme: light)">
@@ -14,15 +14,15 @@
 <meta property="og:site_name" content="GAMEpiada">
 <meta property="og:locale" content="ru_RU">
 <meta property="og:url" content="https://ssgssbex1080.github.io/TOURNAMENTS/">
-<meta property="og:title" content="GAMEpiada 🏆 — турнирная арена сезона I">
-<meta property="og:description" content="17 дисциплин, 8 бойцов, живые сетки и один золотой трон. 27 октября — 1 ноября 2026.">
+<meta property="og:title" content="GAMEpiada 🏆 — киберспортивная арена сезона I">
+<meta property="og:description" content="17 дисциплин, 8 бойцов, сетки и заезды по регламенту. Даты уточняются — играем, когда соберём состав.">
 <meta property="og:image" content="https://ssgssbex1080.github.io/TOURNAMENTS/assets/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="GAMEpiada — небесная турнирная арена с золотым кубком">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="GAMEpiada 🏆 — турнирная арена">
-<meta name="twitter:description" content="17 дисциплин · 8 бойцов · 27.10–01.11.2026. Интерактивные сетки, статистика и живой состав.">
+<meta name="twitter:description" content="17 дисциплин · 8 бойцов · сетки, заезды и живой состав. Даты уточняются.">
 <meta name="twitter:image" content="https://ssgssbex1080.github.io/TOURNAMENTS/assets/og.jpg">
 <meta name="color-scheme" content="dark light">
 
@@ -57,9 +57,7 @@
   "@context": "https://schema.org",
   "@type": "SportsEvent",
   "name": "GAMEpiada · сезон I",
-  "description": "Небесная игровая олимпиада: 17 дисциплин, 8 участников, интерактивные сетки и живая статистика.",
-  "startDate": "2026-10-27T17:00:00+03:00",
-  "endDate": "2026-11-01T23:59:59+03:00",
+  "description": "Мультиигровая арена: 17 дисциплин, 8 участников, интерактивные сетки и живая статистика.",
   "eventStatus": "https://schema.org/EventScheduled",
   "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
   "location": { "@type": "VirtualLocation", "url": "https://discord.gg/5fRZkcjt" },
@@ -78,11 +76,8 @@
   <span class="aurora aurora-3"></span>
 </div>
 <div class="grid-floor" aria-hidden="true"></div>
-<canvas id="stars" aria-hidden="true"></canvas>
 <div class="noise" aria-hidden="true"></div>
-<div id="spotlight" aria-hidden="true"></div>
 <div id="scroll-progress" aria-hidden="true"><i></i></div>
-<div id="cursor" aria-hidden="true"></div>
 
 <!-- ═══════════════════════════ NAV ═══════════════════════════ -->
 <header class="island" id="island">
@@ -148,12 +143,12 @@
     <div class="container">
       <div class="hero-grid">
         <div class="hero-copy">
-          <span class="eyebrow reveal"><i class="pulse" aria-hidden="true"></i>Сезон I · 27.10 — 01.11.2026</span>
+          <span class="eyebrow reveal"><i class="pulse" aria-hidden="true"></i>Сезон I · даты уточняются</span>
           <h1 class="hero-title reveal" style="--d:.06s">
             <span class="title-row"><span class="word">GAME</span><span class="word grad">piada</span><span class="title-star" aria-hidden="true">✦</span></span>
           </h1>
-          <p class="title-sub reveal" style="--d:.12s">Небесная игровая олимпиада. <em>Один трон.</em></p>
-          <p class="hero-sub reveal" style="--d:.18s"><span id="hero-player-word">Восемь</span> бойцов, <b>17 дисциплин</b> и шесть дней, чтобы выяснить, кто здесь настоящий хозяин арены. Живые сетки, дуо-синергия и статистика, которая обновляется прямо из Google Таблицы.</p>
+          <p class="title-sub reveal" style="--d:.12s">Мультиигровая арена. <em>Один трон.</em></p>
+          <p class="hero-sub reveal" style="--d:.18s"><span id="hero-player-word">Восемь</span> бойцов, <b>17 дисциплин</b> и одна таблица, чтобы выяснить, кто здесь настоящий хозяин арены. Сетки и заезды по регламенту, дуо-синергия и статистика прямо из Google Таблицы. Даты объявим, когда соберётся состав.</p>
 
           <div class="hero-cta reveal" style="--d:.24s">
             <button class="btn btn-primary btn-lg" type="button" data-action="register"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Заявиться на турнир</span></button>
@@ -161,7 +156,7 @@
           </div>
 
           <div class="hero-meta reveal" style="--d:.3s">
-            <span><b>27 окт — 1 ноя</b> 2026</span>
+            <span><b id="hero-dates">Даты</b> уточняются</span>
             <span><b id="mini-duos">3</b> дуо-состава</span>
             <span><b>Discord</b> · MSK</span>
             <span class="mono"><b id="mini-registrations">88</b> заявок</span>
@@ -170,9 +165,9 @@
           <div class="hero-now reveal" style="--d:.36s">
             <div class="now-avatars avatar-stack" id="now-avatars"></div>
             <div class="now-info">
-              <div class="now-label"><i aria-hidden="true"></i> Сейчас на арене</div>
+              <div class="now-label"><i aria-hidden="true"></i> Первым в очереди</div>
               <div class="now-title" id="now-discipline">Dota 2 · 1×1</div>
-              <div class="now-time" id="now-time">18:00–21:00 MSK</div>
+              <div class="now-time" id="now-time">стартует первым · даты уточняются</div>
             </div>
             <div class="now-count"><b id="now-count" class="mono">0</b><small>заявились</small></div>
           </div>
@@ -250,7 +245,7 @@
           <div class="pulse-item"><em aria-hidden="true">🛡️</em><b class="pulse-num"><span class="count" data-count="8">8</span></b><span class="pulse-label">бойцов в составе</span></div>
           <div class="pulse-item"><em aria-hidden="true">🎮</em><b class="pulse-num"><span class="count" data-count="17">17</span></b><span class="pulse-label">дисциплин арены</span></div>
           <div class="pulse-item"><em aria-hidden="true">📥</em><b class="pulse-num"><span class="count" data-count="88" id="mini-registrations-2">88</span></b><span class="pulse-label">заявок из формы</span></div>
-          <div class="pulse-item"><em aria-hidden="true">⏳</em><b class="pulse-num"><span class="count" data-count="6">6</span></b><span class="pulse-label">дней сражений</span></div>
+          <div class="pulse-item"><em aria-hidden="true">⏳</em><b class="pulse-num"><span class="count" data-count="17">17</span></b><span class="pulse-label">слотов в очереди</span></div>
         </div>
       </div>
     </div>
@@ -267,8 +262,8 @@
         <div class="section-num reveal">01</div>
         <div class="section-title-wrap">
           <span class="kicker reveal">Дисциплины</span>
-          <h2 class="reveal">17 арен.<br><span class="grad-text">Один календарь.</span></h2>
-          <p class="section-lead reveal">От Dota 2 до шахмат и Geoguessr. Фильтруй, ищи по русскому или латинскому названию и открывай карточку — там формат, правила и все, кто заявился.</p>
+          <h2 class="reveal">17 арен.<br><span class="grad-text">Одна сетка сезона.</span></h2>
+          <p class="section-lead reveal">От Dota 2 до шахмат и Geoguessr. Сетка — там, где дуэль один на один, заезд с местами 1–3 — там, где играют на время. Формат каждой дисциплины взят из официального регламента.</p>
         </div>
         <div class="section-aside reveal">
           <div class="aside-stat"><b>17</b><span>дисциплин</span></div>
@@ -279,7 +274,7 @@
       <div class="toolbar reveal">
         <div class="filters" id="disc-filters" role="group" aria-label="Фильтр дисциплин">
           <button class="filter-chip is-active" type="button" data-filter="all">Все <span data-filter-count="all">17</span></button>
-          <button class="filter-chip" type="button" data-filter="today">Сегодня <span data-filter-count="today">2</span></button>
+          <button class="filter-chip" type="button" data-filter="board">Заезды <span data-filter-count="board">4</span></button>
           <button class="filter-chip" type="button" data-filter="solo">Соло <span data-filter-count="solo">14</span></button>
           <button class="filter-chip" type="button" data-filter="duo">Дуо <span data-filter-count="duo">3</span></button>
           <button class="filter-chip" type="button" data-filter="bo3">BO3 <span data-filter-count="bo3">7</span></button>
@@ -295,57 +290,75 @@
 
       <div class="section-foot">
         <span><b id="disc-count">17</b> дисциплин в расписании · клик по карточке открывает детали</span>
-        <span class="mono">27.10 → 01.11</span>
+        <span class="mono">очередь 01 → 17</span>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════════════════════ 02 BRACKET ═══════════════════════════ -->
+  <!-- ═══════════════════════════ 02 COMPETITION ═══════════════════════════ -->
   <section class="section" id="bracket">
     <div class="container">
       <header class="section-head">
         <div class="section-num reveal">02</div>
         <div class="section-title-wrap">
-          <span class="kicker reveal">Сетка</span>
-          <h2 class="reveal">Кликай.<br><span class="grad-text">Создавай историю.</span></h2>
-          <p class="section-lead reveal">Интерактивная single-elimination сетка для каждой дисциплины. Жми на бойца, чтобы провести его дальше, или запусти автопрогноз и посмотри, кто забирает трон.</p>
+          <span class="kicker reveal">Турнирная</span>
+          <h2 class="reveal">Сетка или заезд.<br><span class="grad-text">Формат решает.</span></h2>
+          <p class="section-lead reveal">Дуэли и команды 2×2 идут по single elimination — от 1/4 до финала. Спидран, Trackmania, Fall Guys и Geometry Dash играются общим заездом: там важны места 1–3, а не ветка.</p>
         </div>
         <div class="section-aside reveal">
-          <div class="aside-stat"><b id="bracket-total">17</b><span>сеток</span></div>
+          <div class="aside-stat"><b id="bracket-total">17</b><span>турниров</span></div>
           <button class="btn btn-glass btn-sm" type="button" data-action="share-bracket"><span aria-hidden="true">↗</span> Поделиться</button>
         </div>
       </header>
 
-      <div class="bracket-shell reveal">
-        <div class="bracket-head">
-          <div>
-            <h3 class="bracket-title"><span class="bt-icon" aria-hidden="true">🏟️</span><span id="bracket-title">Сетка · Dota 2 · 1×1</span></h3>
-            <div class="bracket-meta" id="bracket-meta"></div>
+      <div class="comp-shell reveal" id="comp-shell">
+        <div class="comp-head">
+          <div class="comp-id">
+            <span class="comp-icon" id="comp-icon" aria-hidden="true">⚔️</span>
+            <div class="comp-title-wrap">
+              <h3 class="comp-title" id="bracket-title">Сетка · Dota 2 · 1×1</h3>
+              <div class="comp-meta" id="bracket-meta"></div>
+            </div>
           </div>
-          <div class="bracket-controls">
-            <span class="select-wrap"><select class="select" id="bracket-select" aria-label="Дисциплина сетки"></select></span>
-            <button class="btn btn-ghost btn-sm" type="button" data-action="auto-bracket" data-label='<span aria-hidden="true">⚡</span><span>Автопрогноз</span>'><span aria-hidden="true">⚡</span><span>Автопрогноз</span></button>
-            <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Перемешать пары"><span aria-hidden="true">🔀</span><span>Заново</span></button>
-            <button class="btn btn-glass btn-sm" type="button" data-action="reset-bracket" title="Сбросить результаты"><span aria-hidden="true">↺</span><span>Сброс</span></button>
-            <div class="bracket-progress"><span class="bp-track"><i class="bp-fill" id="bracket-progress-fill" style="--w:0%"></i></span><span id="bracket-progress">0 / 7</span></div>
-          </div>
-        </div>
-
-        <div class="bracket-scroll" id="bracket-scroll">
-          <div class="bracket" id="bracket-board">
-            <svg class="bracket-lines" id="bracket-lines" aria-hidden="true"></svg>
-          </div>
-        </div>
-
-        <div class="bracket-hint">
-          <span><b>Подсказка:</b> клик по имени — победа в матче. Повторный клик снимает выбор.</span>
-          <div class="bracket-legend">
-            <span><i class="legend-line"></i> победная ветка</span>
-            <span><i class="legend-line dim"></i> ожидание</span>
+          <div class="comp-controls">
+            <span class="select-wrap"><select class="select" id="bracket-select" aria-label="Дисциплина"></select></span>
+            <div class="comp-actions" id="bracket-actions">
+              <button class="btn btn-ghost btn-sm" type="button" data-action="auto-bracket" data-label='<span aria-hidden="true">⚡</span><span>Автопрогноз</span>'><span aria-hidden="true">⚡</span><span>Автопрогноз</span></button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Пересобрать пары"><span aria-hidden="true">🔀</span><span>Пары</span></button>
+              <button class="btn btn-glass btn-sm" type="button" data-action="reset-bracket" title="Сбросить результаты"><span aria-hidden="true">↺</span><span>Сброс</span></button>
+              <div class="bracket-progress"><span class="bp-track"><i class="bp-fill" id="bracket-progress-fill" style="--w:0%"></i></span><span id="bracket-progress">0 / 5</span></div>
+            </div>
+            <div class="comp-actions" id="board-actions" hidden>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="board-auto"><span aria-hidden="true">⚡</span><span>Собрать подиум</span></button>
+              <button class="btn btn-glass btn-sm" type="button" data-action="board-reset"><span aria-hidden="true">↺</span><span>Сброс</span></button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="board-share"><span aria-hidden="true">↗</span><span>Поделиться</span></button>
+            </div>
           </div>
         </div>
 
-        <div class="champion-slot" id="champion-slot"></div>
+        <div class="comp-brief" id="comp-brief"></div>
+
+        <div id="bracket-body">
+          <div class="bracket-scroll" id="bracket-scroll">
+            <div class="bracket" id="bracket-board">
+              <svg class="bracket-lines" id="bracket-lines" aria-hidden="true"></svg>
+            </div>
+          </div>
+          <div class="bracket-hint">
+            <span><b>Как это работает:</b> клик по участнику — победа в матче, повторный клик снимает выбор. Пары фиксируются до старта слота.</span>
+            <div class="bracket-legend">
+              <span><i class="legend-line"></i> победная ветка</span>
+              <span><i class="legend-line dim"></i> ожидание</span>
+            </div>
+          </div>
+          <div class="champion-slot" id="champion-slot"></div>
+        </div>
+
+        <div class="board-view" id="board-view" hidden>
+          <div class="board-podium" id="board-podium"></div>
+          <div class="board-list" id="board-list"></div>
+          <div class="board-note" id="board-note"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -518,14 +531,18 @@
         <div class="section-num reveal">06</div>
         <div class="section-title-wrap">
           <span class="kicker reveal">Расписание</span>
-          <h2 class="reveal">Шесть дней.<br><span class="grad-text">17 стартов.</span></h2>
-          <p class="section-lead reveal">Всё по московскому времени. Клик по слоту открывает дисциплину, а кнопка ниже добавляет расписание в календарь.</p>
+          <h2 class="reveal">Очередь.<br><span class="grad-text">17 слотов.</span></h2>
+          <p class="section-lead reveal">Даты пока не утверждены: организатор объявит дни, когда соберётся состав. Порядок слотов и примерное время суток зафиксированы — по московскому времени.</p>
         </div>
         <div class="section-aside reveal">
           <div class="aside-stat"><b>MSK</b><span>UTC+3</span></div>
-          <button class="btn btn-glass btn-sm" type="button" data-action="ics"><span aria-hidden="true">📅</span> В календарь</button>
+          <button class="btn btn-glass btn-sm" type="button" data-action="dates"><span aria-hidden="true">📅</span> Когда играем</button>
         </div>
       </header>
+
+      <div class="dates-banner reveal" id="dates-note">
+        <b>Даты уточняются</b><span>Порядок слотов зафиксирован, календарные дни организатор объявит в Discord.</span>
+      </div>
 
       <div class="schedule-layout">
         <div class="timeline reveal" id="timeline"></div>
@@ -533,11 +550,11 @@
           <div class="next-event" id="next-event">
             <span class="ne-label"><i class="status-dot is-loading" aria-hidden="true"></i> следующий старт</span>
             <b>Geometry Dash</b>
-            <span>27.10 · 17:00 MSK</span>
+            <span>слот 1 · ~17:00 MSK · даты уточняются</span>
           </div>
-          <div class="join-timer">
-            <small>До финала турнира</small>
-            <b id="event-countdown">—</b>
+          <div class="join-timer is-tbd">
+            <small>Даты турнира</small>
+            <b id="event-countdown">TBD</b>
           </div>
           <button class="btn btn-primary" type="button" data-action="register">Заявиться</button>
           <button class="btn btn-ghost" type="button" data-action="top">Наверх ↑</button>
@@ -590,16 +607,16 @@
         <article class="rule-card reveal">
           <span class="rule-num" aria-hidden="true">02</span>
           <div class="rule-icon" aria-hidden="true">⏱️</div>
-          <h3>Старт — по расписанию</h3>
-          <p>Каждый слот начинается в указанное время MSK. Опоздание больше 10 минут — техническое поражение, если соперник не согласен ждать.</p>
-          <div class="rule-foot"><span class="tag">BO1 / BO3</span><span class="tag">MSK</span></div>
+          <h3>Старт — по очереди</h3>
+          <p>Слоты идут по порядку и начинаются в примерное время MSK; точный день организатор объявит в Discord. Опоздание больше 10 минут — техническое поражение, если соперник не согласен ждать.</p>
+          <div class="rule-foot"><span class="tag">слоты 01–17</span><span class="tag">MSK</span></div>
         </article>
         <article class="rule-card reveal">
           <span class="rule-num" aria-hidden="true">03</span>
           <div class="rule-icon" aria-hidden="true">🧮</div>
           <h3>Очки и сетка</h3>
-          <p>Победа в дисциплине: 1-е место — 3 очка, 2-е — 2, 3-е — 1. Сетки single elimination, пары формируются случайно и фиксируются до старта.</p>
-          <div class="rule-foot"><span class="tag">3 / 2 / 1</span><span class="tag">single elim</span></div>
+          <p>За место в дисциплине: 1-е — 3 очка, 2-е — 2, 3-е — 1; в командах 2×2 очки делятся — 1,5 / 1 / 0,5. Дуэли идут по single elimination, заезды — общим зачётом на места 1–3.</p>
+          <div class="rule-foot"><span class="tag">3 / 2 / 1</span><span class="tag">1,5 / 1 / 0,5</span></div>
         </article>
         <article class="rule-card reveal">
           <span class="rule-num" aria-hidden="true">04</span>
@@ -620,7 +637,7 @@
           <div class="join-copy">
             <span class="kicker">Свободное место</span>
             <h2>Трон ещё не занят.<br><span class="grad-text">Забери его.</span></h2>
-            <p>Заявка занимает минуту: имя, ник, дисциплины и пожелания. Ответ сразу попадает в таблицу и на этот сайт — без перезагрузки и ручной модерации.</p>
+            <p>Заявка занимает минуту: имя, ник, дисциплины и пожелания. Ответ сразу попадает в таблицу и на этот сайт. Даты организатор объявит в Discord — как только состав собран, стартуем.</p>
             <div class="join-actions">
               <a class="btn btn-primary btn-lg" href="https://docs.google.com/forms/d/e/1FAIpQLSfTcLac50_-Jh_b2OC8IQpCKJBXhs4m5TlEICbz3N6W06Hyug/viewform" target="_blank" rel="noopener"><span aria-hidden="true">🏆</span><span>Заполнить форму</span></a>
               <a class="btn btn-ghost btn-lg" href="https://discord.gg/5fRZkcjt" target="_blank" rel="noopener"><span aria-hidden="true">💬</span><span>Discord турнира</span></a>
@@ -630,7 +647,7 @@
             <div class="join-avatars" id="join-avatars"></div>
             <div class="join-count"><b id="join-count">8</b><span>бойцов уже в игре</span></div>
             <div class="join-status"><i class="status-dot" aria-hidden="true"></i><span id="join-status-text">заявки открыты</span></div>
-            <div class="join-timer"><small>До конца приёма заявок</small><b id="join-timer">—</b></div>
+            <div class="join-timer is-tbd"><small>Даты старта</small><b id="join-timer">TBD</b></div>
             <button class="btn btn-glass" type="button" data-action="share">↗ Поделиться турниром</button>
           </div>
         </div>
@@ -645,7 +662,7 @@
     <div class="footer-grid">
       <div>
         <div class="footer-brand"><span class="brand-mark" aria-hidden="true">G</span> GAME<span style="color:var(--gold)">piada</span></div>
-        <p>Небесная игровая олимпиада сезона I. 17 дисциплин, <span id="footer-players">8</span> бойцов и один золотой трон. Сделано на чистом HTML, CSS и JavaScript — без фреймворков.</p>
+        <p>Мультиигровая арена сезона I. 17 дисциплин, <span id="footer-players">8</span> бойцов и один золотой трон. Сделано на чистом HTML, CSS и JavaScript — без фреймворков.</p>
       </div>
       <div class="footer-col">
         <h4>Навигация</h4>
@@ -672,7 +689,7 @@
     <div class="footer-word" aria-hidden="true">GAME<em>piada</em></div>
     <div class="footer-bottom">
       <span>© <span id="year">2026</span> GAMEpiada · сезон I. <b>Сделано с любовью к играм.</b></span>
-      <span>Данные: Google Forms → Google Sheets · <b id="footer-sync">snapshot 8</b></span>
+      <span>Данные: Google Forms → Google Sheets · регламент · <b id="footer-sync">snapshot 8</b></span>
     </div>
   </div>
 </footer>

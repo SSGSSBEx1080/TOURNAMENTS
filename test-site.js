@@ -1,6 +1,8 @@
-/* GAMEpiada · jsdom smoke / regression harness
+/* GAMEpiada · jsdom smoke / regression harness  (v4 · слоты вместо дат)
    Запуск: node test-site.js   (нужен devDependency jsdom)
-   Проверяет рендер, фильтры, сетку, дуо, статистику, палитру и live-парсинг. */
+   Проверяет рендер, фильтры, сетки, заезды-подиумы, дуо, статистику, палитру и live-парсинг.
+   Отдельно сторожит то, что пользователь просил убрать: даты-выдумки, кастомный курсор,
+   canvas-звёзды и прочие тяжёлые эффекты. */
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
@@ -113,9 +115,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('roster cards = 8', qa('#roster-grid .player-card') === 8, qa('#roster-grid .player-card'));
   check('leader rows = 8', qa('#leader-list .leader-row') === 8, qa('#leader-list .leader-row'));
   check('wishes = 8', qa('#wishes-wall .wish-card') === 8, qa('#wishes-wall .wish-card'));
-  check('timeline days = 6', qa('#timeline .day-card') === 6, qa('#timeline .day-card'));
+  check('waves = 5 + доигрывание', qa('#timeline .wave-card') === 6, qa('#timeline .wave-card'));
   check('catch-up row', ($('#timeline .day-card:last-child').textContent || '').includes('Окно доигрывания'), 'ok');
   check('schedule slots = 17', qa('#timeline .slot[data-disc-id]') === 17, qa('#timeline .slot[data-disc-id]'));
+  check('no weekday labels', !/(понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)/i.test($('#timeline').textContent), 'ok');
+  check('dates tbd banner', /уточня/i.test($('#dates-note').textContent), $('#dates-note').textContent.replace(/\s+/g, ' ').slice(0, 70));
+  check('countdown is TBD', $('#event-countdown').textContent.trim() === 'TBD' && $('#join-timer').textContent.trim() === 'TBD', $('#event-countdown').textContent + ' / ' + $('#join-timer').textContent);
+  check('no fake dates in DOM', !/\b(27|28|29|30|31)\.10\.2026\b|\b0[1-9]\.11\.2026\b/.test(document.body.textContent), 'ok');
+  check('hero dates tbd', /уточня/i.test($('#hero-dates').parentElement.textContent), $('#hero-dates').parentElement.textContent.replace(/\s+/g, ' ').trim());
+  check('no custom cursor/canvas', !$('#cursor') && !$('#stars') && !$('#spotlight'), 'removed');
+  check('bracket select = 17', qa('#bracket-select option') === 17, qa('#bracket-select option'));
+  check('competition starts in bracket', qa('#board-view .podium-slot') === 0 && $('#board-view').hidden, 'board hidden');
   check('bar rows = 10', qa('#bar-chart .bar-row') === 10, qa('#bar-chart .bar-row'));
   check('top bar is Dota', /Dota 2/.test($('#bar-chart .bar-row').textContent) && /7 · 88%/.test($('#bar-chart .bar-row').textContent), $('#bar-chart .bar-row').textContent.replace(/\s+/g, ' '));
   check('stats total = 88', $('#stats-total').textContent === String(TOTAL_SNAP), $('#stats-total').textContent);
@@ -133,6 +143,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── filters & search ───────────────────────────────────────────────
   $('#disc-filters [data-filter="duo"]').click();
   check('duo filter = 3', qa('#disc-grid .disc-card') === 3, qa('#disc-grid .disc-card'));
+  $('#disc-filters [data-filter="board"]').click();
+  check('board filter = 4', qa('#disc-grid .disc-card') === 4, qa('#disc-grid .disc-card'));
   $('#disc-filters [data-filter="all"]').click();
   $('#disc-search').value = 'шахматы';
   $('#disc-search').dispatchEvent(new window.Event('input', { bubbles: true }));
@@ -144,7 +156,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('#disc-search').dispatchEvent(new window.Event('input', { bubbles: true }));
 
   // ── disc modal ─────────────────────────────────────────────────────
-  $('#disc-grid .disc-card').click();
+  $('#disc-grid .disc-card[data-disc-id="dota11"]').click();
   check('disc modal opens', !$('#modal').hidden, '');
   check('disc modal title', /Dota 2/.test($('#modal-body').textContent), $('#modal-body').querySelector('.md-title') && $('#modal-body').querySelector('.md-title').textContent);
   $('#modal-close').click();
@@ -153,10 +165,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── bracket play ───────────────────────────────────────────────────
   check('bracket starts without champion', /Финал ещё не сыгран/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 60));
   const progressBefore = $('#bracket-progress').textContent;
-  const playable = $('#bracket-board .match-row[data-player]');
+  const playable = Array.from(document.querySelectorAll('#bracket-board .match'))
+    .filter((m) => m.querySelectorAll('.match-row[data-entrant]').length === 2)
+    .map((m) => m.querySelector('.match-row[data-entrant]'))[0];
   const denominator = progressBefore.split('/')[1];
   playable.click();
-  check('bracket pick works', $('#bracket-progress').textContent !== progressBefore || qa('#bracket-board .match-row.is-winner') > 0, progressBefore + ' -> ' + $('#bracket-progress').textContent);
+  check('bracket pick works', !!playable && /^1 \//.test($('#bracket-progress').textContent.trim()), progressBefore + ' -> ' + $('#bracket-progress').textContent);
   check('bracket denominator stable', $('#bracket-progress').textContent.split('/')[1] === denominator, denominator + ' -> ' + $('#bracket-progress').textContent);
   check('champion slot has text', ($('#champion-slot').textContent || '').length > 0, 'ok');
   $('#bracket-select').value = 'chess';
@@ -166,6 +180,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('shuffle keeps rounds', qa('#bracket-board .bracket-round') >= 2, qa('#bracket-board .bracket-round'));
   $('[data-action="reset-bracket"]').click();
   check('reset clears winners', /^0 \//.test($('#bracket-progress').textContent.trim()), $('#bracket-progress').textContent);
+
+  // ── заезд: подиум 1 / 2 / 3 вместо сетки ───────────────────────────
+  $('#bracket-select').value = 'tm';
+  $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('board title', /Заезд.*Trackmania/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
+  check('board mode hides bracket', $('#bracket-body').hidden && !$('#board-view').hidden, 'board only');
+  check('podium slots = 3', qa('#board-view .podium-slot') === 3, qa('#board-view .podium-slot'));
+  check('podium points', /3 \/ 2 \/ 1/.test($('#comp-brief').textContent), 'ok');
+  check('board brief from regulation', /сумма времени|5 трасс/i.test($('#comp-brief').textContent), 'ok');
+  const boardRows = qa('#board-list .board-row');
+  check('board list = entrants', boardRows >= 3, boardRows);
+  $('[data-action="board-auto"]').click();
+  check('board auto fills 3', qa('#board-view .podium-slot.is-filled') === 3, qa('#board-view .podium-slot.is-filled'));
+  check('board points awarded', /\+3 очк/.test($('#board-podium').textContent) && /\+1 очк/.test($('#board-podium').textContent), 'ok');
+  $('#board-list .board-row').click();
+  check('board pick clears place', qa('#board-view .podium-slot.is-filled') === 2, qa('#board-view .podium-slot.is-filled'));
+  $('[data-action="board-reset"]').click();
+  check('board reset empties podium', qa('#board-view .podium-slot.is-filled') === 0, qa('#board-view .podium-slot.is-filled'));
+  check('board has no bracket lines', !$('#bracket-lines').innerHTML.length, 'empty');
+  $('#bracket-select').value = 'dota11';
+  $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('back to bracket mode', !$('#bracket-body').hidden && $('#board-view').hidden, 'ok');
+  check('dota11 series BO1', /BO1/.test($('#bracket-meta').textContent), $('#bracket-meta').textContent.replace(/\s+/g, ' ').slice(0, 70));
 
   // ── roster, matrix, duo ────────────────────────────────────────────
   $('#roster-grid .player-card').click();

@@ -21,8 +21,9 @@
     likes: 'gamepiada-likes-v3',
     sound: 'gamepiada-sound',
     duo: 'gamepiada-duo',
-    brackets: 'gamepiada-brackets-v3',
-    bracketId: 'gamepiada-bracket-id'
+    brackets: 'gamepiada-brackets-v4',
+    bracketId: 'gamepiada-bracket-id',
+    boards: 'gamepiada-boards-v4'
   };
 
   /* ─────────────────────────── helpers ─────────────────────────── */
@@ -125,26 +126,72 @@
     var d = new Date(s);
     return isNaN(d.getTime()) ? null : d;
   }
-  function discStart(d) { return new Date(d.date + 'T' + d.start + ':00+03:00'); }
-  function discEnd(d) { return new Date(d.date + 'T' + d.end + ':00+03:00'); }
-  function durationMin(d) {
-    var a = discStart(d), b = discEnd(d);
-    return Math.max(0, Math.round((b - a) / 60000));
-  }
+  /* Календарных дат нет: турнир идёт по очереди слотов. Порядок — order. */
+  function byOrder(a, b) { return (a.order || 0) - (b.order || 0); }
+  function queue() { return DISC.slice().sort(byOrder); }
+  function compOf(d) { return (d && d.comp) || {}; }
+  function isBoard(d) { return compOf(d).kind === 'board'; }
+  function seriesOf(d) { return compOf(d).series || d.bo || '—'; }
+  function seatLabel(d) { return (compOf(d).seats || 1) > 1 ? '2×2' : '1×1'; }
   function durationLabel(d) {
-    var m = durationMin(d);
+    var m = d.duration || 0;
+    if (!m) return '—';
     if (m < 60) return m + 'м';
     var h = Math.floor(m / 60), rest = m % 60;
     return h + 'ч' + (rest ? ' ' + rest + 'м' : '');
   }
-  function dateBadge(d) {
-    var today = mskToday();
-    var now = Date.now();
-    if (d.date === today) return { cls: 'today', text: discStart(d) <= now && now <= discEnd(d) ? 'Идёт' : 'Сегодня' };
-    if (discEnd(d) < now) return { cls: 'catchup', text: 'Прошло' };
-    var diff = (discStart(d) - now) / 86400000;
-    if (diff <= 3) return { cls: 'soon', text: 'Скоро' };
-    return { cls: '', text: dateLabel(d.date) };
+  function slotBadge(d) {
+    if (isBoard(d)) return { cls: 'is-board', text: 'заезд' };
+    return { cls: '', text: 'слот ' + (d.order || '—') };
+  }
+  function fmtPoints(v) {
+    return String(v).replace('.', ',').replace(/,0$/, '');
+  }
+  function placePoints(d, place) {
+    var base = (EVENT.scoring || [3, 2, 1])[place - 1] || 0;
+    if ((compOf(d).seats || 1) > 1) return base / 2;
+    return base;
+  }
+  /* Участники соревнования: в одиночных — игроки, в 2×2 — команды из
+     взаимных дуо-пожеланий, одиночки добираются как solo-команды. */
+  function entrants(d) {
+    var seats = compOf(d).seats || 1;
+    var people = participants(d);
+    if (seats < 2) {
+      return people.map(function (p) {
+        return { key: p.id, label: p.nick, players: [p], team: false, strength: (p.disciplines || []).length };
+      });
+    }
+    var used = {}, out = [];
+    people.forEach(function (p) {
+      if (used[p.id]) return;
+      var mate = null;
+      for (var i = 0; i < people.length; i++) {
+        var q = people[i];
+        if (q.id === p.id || used[q.id]) continue;
+        var info = pairInfo(p, q);
+        if (info && info.mutual) { mate = q; break; }
+      }
+      if (mate) {
+        used[p.id] = used[mate.id] = 1;
+        out.push({
+          key: 't-' + p.id + '-' + mate.id,
+          label: p.nick + ' + ' + mate.nick,
+          players: [p, mate], team: true,
+          strength: (p.disciplines || []).length + (mate.disciplines || []).length
+        });
+      } else {
+        used[p.id] = 1;
+        out.push({ key: 's-' + p.id, label: p.nick, players: [p], team: false, strength: (p.disciplines || []).length });
+      }
+    });
+    return out;
+  }
+  function entrantByKey(d, key) {
+    if (!key) return null;
+    var list = entrants(d);
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
+    return null;
   }
 
   /* ─────────────────────────── state ─────────────────────────── */
@@ -159,6 +206,7 @@
     rosterSort: 'disciplines',
     bracketId: 'dota11',
     brackets: {},
+    boards: {},
     duoA: 'p2',
     duoB: 'p7',
     chartOpen: false,
@@ -179,6 +227,8 @@
     if (savedDuo && savedDuo.a && savedDuo.b) { state.duoA = savedDuo.a; state.duoB = savedDuo.b; }
     var savedBrackets = JSON.parse(localStorage.getItem(LS.brackets) || 'null');
     if (savedBrackets && typeof savedBrackets === 'object') state.brackets = savedBrackets;
+    var savedBoards = JSON.parse(localStorage.getItem(LS.boards) || 'null');
+    if (savedBoards && typeof savedBoards === 'object') state.boards = savedBoards;
     var savedBracketId = localStorage.getItem(LS.bracketId);
     if (savedBracketId && DISC.some(function (d) { return d.id === savedBracketId; })) state.bracketId = savedBracketId;
   } catch (e) { /* ignore */ }
@@ -198,6 +248,13 @@
     return state.players.filter(function (p) { return (p.disciplines || []).indexOf(d.id) >= 0; });
   }
   function countFor(id) { return participants(discById(id)).length; }
+  function saveBoards() {
+    try { localStorage.setItem(LS.boards, JSON.stringify(state.boards)); } catch (e) { /* quota */ }
+  }
+  function boardState(id) {
+    if (!state.boards[id]) state.boards[id] = { 1: '', 2: '', 3: '' };
+    return state.boards[id];
+  }
   function saveBrackets() {
     try {
       localStorage.setItem(LS.brackets, JSON.stringify(state.brackets));
@@ -349,108 +406,40 @@
     requestAnimationFrame(frame);
   }
 
-  /* stars */
-  (function stars() {
-    var canvas = $('#stars');
-    if (!canvas) return;
-    var ctx = null;
-    try { ctx = canvas.getContext('2d'); } catch (e) { ctx = null; }
-    if (!ctx) return;
-    var stars = [], w = 0, h = 0, dpr = Math.min(2, window.devicePixelRatio || 1);
-    function size() {
-      w = window.innerWidth; h = window.innerHeight;
-      canvas.width = w * dpr; canvas.height = h * dpr;
-      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      stars = [];
-      var n = Math.round(w * h / 16000);
-      for (var i = 0; i < n; i++) {
-        stars.push({ x: Math.random() * w, y: Math.random() * h, r: Math.random() * 1.3 + 0.25, a: Math.random() * 0.7 + 0.15, s: Math.random() * 0.02 + 0.004, p: Math.random() * Math.PI * 2 });
-      }
-    }
-    size();
-    window.addEventListener('resize', size);
-    var last = 0;
-    function loop(now) {
-      if (now - last < 40) { requestAnimationFrame(loop); return; }
-      last = now;
-      ctx.clearRect(0, 0, w, h);
-      var light = root.getAttribute('data-theme') === 'light';
-      for (var i = 0; i < stars.length; i++) {
-        var s = stars[i];
-        s.p += s.s;
-        var a = s.a * (0.6 + 0.4 * Math.sin(s.p));
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = light ? 'rgba(120,95,40,' + (a * 0.5) + ')' : 'rgba(255,245,220,' + a + ')';
-        ctx.fill();
-      }
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-  })();
-
-  /* cursor / spotlight / parallax */
-  (function pointerFx() {
-    var cursor = $('#cursor');
-    var fine = true;
+  /* ── эффекты: только там, где они не мешают FPS ─────────────────────────
+     Нет звёздного canvas-цикла, нет кастомного курсора и нет тилта карточек
+     на каждом pointermove. Остался один лёгкий параллакс сцены: rAF-throttle,
+     точный указатель, только когда hero в кадре. */
+  (function heroParallax() {
+    var fine = false;
     try { fine = window.matchMedia('(hover:hover) and (pointer:fine)').matches; } catch (e) { fine = false; }
-    var x = 0, y = 0, moved = false, raf = 0;
-    function frame() {
-      raf = 0;
-      if (cursor) cursor.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
-      root.style.setProperty('--mx', x + 'px');
-      root.style.setProperty('--my', y + 'px');
-    }
-    window.addEventListener('pointermove', function (e) {
-      x = e.clientX; y = e.clientY;
-      if (!moved && cursor && fine) { cursor.classList.add('is-on'); moved = true; }
-      if (!raf) raf = requestAnimationFrame(frame);
-      var stage = e.target.closest ? e.target.closest('.hero-stage') : null;
-      if (stage) {
-        var r = stage.getBoundingClientRect();
-        var rx = ((e.clientY - r.top) / r.height - 0.5) * -7;
-        var ry = ((e.clientX - r.left) / r.width - 0.5) * 9;
-        var core = $('#stage-core', stage);
-        if (core) {
-          core.style.setProperty('--rx', rx.toFixed(2) + 'deg');
-          core.style.setProperty('--ry', ry.toFixed(2) + 'deg');
-        }
-        $$('.float-chip', stage).forEach(function (chip, i) {
-          var depth = (i % 3 + 1) * 5;
-          chip.style.setProperty('--px', ((e.clientX - r.left) / r.width - 0.5) * depth * 2);
-          chip.style.setProperty('--py', ((e.clientY - r.top) / r.height - 0.5) * depth);
-        });
-      }
+    if (!fine) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var hero = $('#home');
+    var core = hero ? $('#stage-core', hero) : null;
+    if (!hero || !core) return;
+    var raf = 0, px = 0, py = 0;
+    hero.addEventListener('pointermove', function (e) {
+      var r = hero.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) return;
+      px = (e.clientX - r.left) / r.width - 0.5;
+      py = (e.clientY - r.top) / r.height - 0.5;
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        core.style.setProperty('--ry', (px * -7).toFixed(2) + 'deg');
+        core.style.setProperty('--rx', (py * 5).toFixed(2) + 'deg');
+      });
     }, { passive: true });
-    window.addEventListener('pointerover', function (e) {
-      if (!cursor || !fine) return;
-      var hot = e.target.closest && e.target.closest('a,button,.disc-card,.player-card,.pair-card,.wish-card,[role="button"]');
-      cursor.classList.toggle('is-hot', !!hot);
-    });
-    window.addEventListener('pointerout', function (e) {
-      if (cursor && fine && !e.relatedTarget) cursor.classList.remove('is-hot');
-    });
+    hero.addEventListener('pointerleave', function () {
+      core.style.setProperty('--ry', '0deg');
+      core.style.setProperty('--rx', '0deg');
+    }, { passive: true });
   })();
 
-  /* tilt cards */
-  document.addEventListener('pointermove', function (e) {
-    var card = e.target.closest && e.target.closest('[data-tilt]');
-    if (!card) return;
-    var r = card.getBoundingClientRect();
-    var px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
-    card.style.setProperty('--rx', ((0.5 - py) * 7).toFixed(2) + 'deg');
-    card.style.setProperty('--ry', ((px - 0.5) * 9).toFixed(2) + 'deg');
-    card.style.setProperty('--ty', '-2px');
-    card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
-    card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
-  }, { passive: true });
-  document.addEventListener('pointerout', function (e) {
-    var card = e.target.closest && e.target.closest('[data-tilt]');
-    if (!card || (e.relatedTarget && card.contains(e.relatedTarget))) return;
-    card.style.setProperty('--rx', '0deg');
-    card.style.setProperty('--ry', '0deg');
-    card.style.setProperty('--ty', '0px');
+  /* В свёрнутой вкладке всё анимируемое встаёт на паузу. */
+  document.addEventListener('visibilitychange', function () {
+    document.body.classList.toggle('is-idle', document.hidden);
   });
 
   /* ─────────────────────────── toasts ─────────────────────────── */
@@ -473,16 +462,13 @@
     if (!host) return;
     var items = DISC.map(function (d) {
       return '<span class="ticker-item">' + d.icon + ' <b>' + esc(d.name) + '</b> ' + esc(d.mode) +
-        ' <i>' + countFor(d.id) + '</i> · ' + dateLabel(d.date) + ' ' + d.start + '</span>';
+        ' <i>' + countFor(d.id) + '</i> · слот ' + d.order + ' · ~' + d.time + '</span>';
     }).join('');
     host.innerHTML = items + items;
   }
 
   function renderHeroNow() {
-    var now = Date.now();
-    var active = DISC.filter(function (d) { return discStart(d) <= now && now <= discEnd(d); })[0];
-    var next = DISC.filter(function (d) { return discStart(d) > now; }).sort(function (a, b) { return discStart(a) - discStart(b); })[0];
-    var d = active || next || DISC[DISC.length - 1];
+    var d = queue()[0];
     if (!d) return;
     var list = participants(d);
     var avatars = $('#now-avatars');
@@ -494,7 +480,7 @@
     var disc = $('#now-discipline');
     if (disc) disc.textContent = d.name + ' · ' + d.mode;
     var time = $('#now-time');
-    if (time) time.textContent = (active ? 'идёт до ' + d.end : d.start + '–' + d.end) + ' MSK · ' + dateLabel(d.date);
+    if (time) time.textContent = 'стартует первым · ~' + d.time + ' MSK · даты уточняются';
     var count = $('#now-count');
     if (count) count.textContent = String(list.length);
   }
@@ -502,24 +488,21 @@
   function syncLivePill() {
     var pill = $('#live-pill'), text = $('#live-text');
     if (!pill || !text) return;
-    var now = Date.now();
-    var start = new Date(EVENT.start).getTime();
-    var end = new Date(EVENT.end).getTime();
-    pill.classList.remove('is-soon', 'is-ended');
-    if (now < start) { pill.classList.add('is-soon'); text.textContent = 'Скоро'; }
-    else if (now > end) { pill.classList.add('is-ended'); text.textContent = 'Финал'; }
-    else { text.textContent = 'Live'; }
+    pill.classList.remove('is-ended');
+    pill.classList.add('is-soon');
+    text.textContent = 'Набор';
+    pill.setAttribute('title', EVENT.dateLabel || 'Даты уточняются');
   }
 
   /* ─────────────────────────── disciplines ─────────────────────────── */
   function filteredDisc() {
-    var today = mskToday();
     var q = norm(state.discQuery);
-    return DISC.filter(function (d) {
-      if (state.filter === 'today' && d.date !== today) return false;
+    return queue().filter(function (d) {
+      if (state.filter === 'board' && !isBoard(d)) return false;
+      if (state.filter === 'bracket' && isBoard(d)) return false;
       if (state.filter === 'solo' && d.type !== 'solo') return false;
       if (state.filter === 'duo' && d.type !== 'duo') return false;
-      if (state.filter === 'bo3' && d.bo !== 'BO3') return false;
+      if (state.filter === 'bo3' && seriesOf(d) !== 'BO3') return false;
       if (q && !matchesDisc(d, q)) return false;
       return true;
     });
@@ -530,7 +513,7 @@
     if (!grid) return;
     var list = filteredDisc();
     grid.innerHTML = list.map(function (d, i) {
-      var badge = dateBadge(d);
+      var badge = slotBadge(d);
       var list = participants(d);
       var avatars = list.slice(0, 3).map(function (p) {
         return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '" title="' + esc(p.nick) + '"><span>' + esc(p.initials) + '</span></span>';
@@ -540,7 +523,7 @@
         '<div class="disc-top"><span class="disc-icon" aria-hidden="true">' + d.icon + '</span>' +
         '<span class="disc-status ' + badge.cls + '">' + badge.text + '</span></div>' +
         '<div class="disc-name">' + esc(d.name) + '<span>' + esc(d.mode) + '</span></div>' +
-        '<div class="disc-meta"><span class="tag">' + dateLabel(d.date) + ' · ' + d.start + '</span><span class="tag">' + esc(d.format) + '</span><span class="tag is-gold">' + esc(d.bo) + '</span></div>' +
+        '<div class="disc-meta"><span class="tag">~' + d.time + ' MSK</span><span class="tag">' + esc(isBoard(d) ? 'заезд' : seatLabel(d)) + '</span><span class="tag is-gold">' + esc(isBoard(d) ? '3 / 2 / 1' : seriesOf(d)) + '</span></div>' +
         '<div class="disc-foot"><div class="disc-avatars">' + avatars + '</div><span class="disc-count">' + list.length + ' / ' + state.players.length + '</span>' +
         '<span class="disc-cta">Открыть <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>' +
         '</article>';
@@ -552,11 +535,11 @@
       var foot = count.closest('span');
       if (foot) foot.innerHTML = '<b id="disc-count">' + list.length + '</b> из ' + DISC.length + ' · клик по карточке открывает детали';
     }
-    var todayCount = DISC.filter(function (d) { return d.date === mskToday(); }).length;
+    var boardCount = DISC.filter(isBoard).length;
     var duoCount = DISC.filter(function (d) { return d.type === 'duo'; }).length;
-    var bo3Count = DISC.filter(function (d) { return d.bo === 'BO3'; }).length;
+    var bo3Count = DISC.filter(function (d) { return seriesOf(d) === 'BO3'; }).length;
     var soloCount = DISC.length - duoCount;
-    var map = { all: DISC.length, today: todayCount, solo: soloCount, duo: duoCount, bo3: bo3Count };
+    var map = { all: DISC.length, board: boardCount, bracket: DISC.length - boardCount, solo: soloCount, duo: duoCount, bo3: bo3Count };
     $$('#disc-filters [data-filter-count]').forEach(function (el) {
       el.textContent = String(map[el.getAttribute('data-filter-count')] || 0);
     });
@@ -613,24 +596,110 @@
     return 'Раунд ' + count;
   }
 
-  function matchRow(m, r, i, seed) {
-    return [m.a, m.b].map(function (id, side) {
-      var p = id ? playerById(id) : null;
-      var win = id && m.winner === id;
-      if (!p) {
+  /* Пулы и результаты живут на ключах участников (команда 2×2 — один ключ). */
+  function buildRounds(d) {
+    var st = bracketState(d.id);
+    var pool = entrants(d).map(function (e) { return e.key; });
+    if (!pool.length) return [[{ a: null, b: null, winner: null }]];
+    var size = 2;
+    while (size < Math.max(2, pool.length)) size *= 2;
+    var byes = size - pool.length;
+    var order = seededShuffle(pool, st.seed);
+    var first = [];
+    /* пустые слоты (bye) всегда в паре с участником — без «null vs null» */
+    for (var b = 0; b < byes; b++) {
+      var solo = order.pop();
+      first.push(b % 2 ? { a: solo, b: null, winner: null } : { a: null, b: solo, winner: null });
+    }
+    while (order.length) first.push({ a: order.pop() || null, b: order.pop() || null, winner: null });
+    first = seededShuffle(first, (st.seed ^ 0x9e3779b9) >>> 0);
+    var rounds = [first];
+    while (rounds[rounds.length - 1].length > 1) {
+      var prev = rounds[rounds.length - 1], next = [];
+      for (var j = 0; j < prev.length; j += 2) next.push({ a: null, b: null, winner: null });
+      rounds.push(next);
+    }
+    rounds.forEach(function (matches, r) {
+      matches.forEach(function (m, i) {
+        if (r > 0) {
+          var pa = rounds[r - 1][i * 2], pb = rounds[r - 1][i * 2 + 1];
+          m.a = pa ? pa.winner : null;
+          m.b = pb ? pb.winner : null;
+        }
+        /* BYE авто-проходит только в первом раунде: дальше пустой слот —
+           это ещё не сыгранный матч, а не свободная путёвка. */
+        if (r === 0 && m.a && !m.b) m.winner = m.a;
+        else if (r === 0 && !m.a && m.b) m.winner = m.b;
+        else if (m.a && m.b) {
+          var pick = st.winners[r + '-' + i];
+          if (pick === m.a || pick === m.b) m.winner = pick;
+        }
+      });
+    });
+    return rounds;
+  }
+
+  function matchRow(d, m, r, i, seed) {
+    return [m.a, m.b].map(function (key, side) {
+      var e = key ? entrantByKey(d, key) : null;
+      var win = key && m.winner === key;
+      if (!e) {
         return '<div class="match-row is-empty"><span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
           '<span class="match-name">Ожидание</span><span class="match-bye">' + (side === 0 && m.b ? 'bye' : '') + '</span></div>';
       }
-      return '<button class="match-row' + (win ? ' is-winner' : '') + '" type="button" data-player="' + p.id + '" data-key="' + r + '-' + i + '"' +
-        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(p.nick) + '">' +
+      var first = e.players[0] || {};
+      return '<button class="match-row' + (win ? ' is-winner' : '') + (e.team ? ' is-team' : '') + '" type="button" data-entrant="' + esc(e.key) + '"' +
+        ' data-player="' + esc(first.id || '') + '" data-key="' + r + '-' + i + '"' +
+        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' +
         '<span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
-        '<span class="match-name">' + esc(p.nick) + '</span>' +
+        '<span class="match-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
         '<span class="match-score" aria-hidden="true">✓</span></button>';
     }).join('');
   }
 
-  function renderBracket() {
-    var d = discById(state.bracketId) || DISC[0];
+  function compBriefHtml(d) {
+    var c = compOf(d);
+    var pts = (c.seats || 1) > 1 ? '1,5 / 1 / 0,5' : '3 / 2 / 1';
+    var rows = (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('');
+    var tbd = (c.tbd || []).map(function (t) { return '<span class="tbd-chip">' + esc(t) + '</span>'; }).join('');
+    return '<div class="cp-grid">' +
+        '<div class="cp-cell"><small>формат</small><b>' + (isBoard(d) ? 'заезд · общий зачёт' : (c.seats > 1 ? 'команды 2×2' : 'дуэль 1×1')) + '</b></div>' +
+        '<div class="cp-cell"><small>' + (isBoard(d) ? 'метрика' : 'серия') + '</small><b>' + esc(isBoard(d) ? (c.metric || '—') : (c.seriesNote || seriesOf(d))) + '</b></div>' +
+        '<div class="cp-cell"><small>победа</small><b>' + esc(c.win || '—') + '</b></div>' +
+        '<div class="cp-cell"><small>очки за места</small><b>' + pts + '</b></div>' +
+      '</div>' +
+      '<div class="cp-lists">' +
+        '<div class="cp-rules"><span class="cp-cap">регламент · ' + esc(d.name) + ' ' + esc(d.mode) + '</span><ul>' + rows + '</ul></div>' +
+        (tbd ? '<div class="cp-tbd"><span class="cp-cap">уточняется до старта</span><div>' + tbd + '</div></div>' : '') +
+      '</div>';
+  }
+
+  function renderCompHead(d) {
+    var c = compOf(d);
+    var list = entrants(d);
+    var title = $('#bracket-title');
+    if (title) title.textContent = (isBoard(d) ? 'Заезд · ' : 'Сетка · ') + d.name + ' · ' + d.mode;
+    var meta = $('#bracket-meta');
+    if (meta) {
+      meta.innerHTML = '<span class="tag"><b>слот ' + d.order + '</b> · ~' + d.time + ' MSK</span>' +
+        '<span class="tag">' + esc(isBoard(d) ? 'общий зачёт' : seatLabel(d)) + '</span>' +
+        '<span class="tag is-gold">' + esc(isBoard(d) ? 'места 1–3' : seriesOf(d)) + '</span>' +
+        '<span class="tag">' + list.length + ' ' + plural(list.length, [c.seats > 1 ? 'команда' : 'боец', c.seats > 1 ? 'команды' : 'бойца', c.seats > 1 ? 'команд' : 'бойцов']) + '</span>';
+    }
+    var icon = $('#comp-icon');
+    if (icon) icon.textContent = d.icon;
+    var shell = $('#comp-shell');
+    if (shell) {
+      shell.style.setProperty('--comp-a', d.accent);
+      shell.style.setProperty('--comp-b', d.accent2);
+    }
+    var brief = $('#comp-brief');
+    if (brief) brief.innerHTML = compBriefHtml(d);
+  }
+
+  function renderBracket(d) {
+    d = d || discById(state.bracketId) || queue()[0];
+    if (!d) return;
     var rounds = buildRounds(d);
     var board = $('#bracket-board');
     if (!board) return;
@@ -641,38 +710,27 @@
       var wrap = document.createElement('div');
       wrap.className = 'bracket-round';
       wrap.setAttribute('data-round', r);
-      var html = '<div class="round-label">' + roundLabel(matches.length) + '</div><div class="round-matches">';
+      var html = '<div class="round-label">' + roundLabel(matches.length) +
+        '<small>' + esc(seriesOf(d)) + '</small></div><div class="round-matches">';
       matches.forEach(function (m, i) {
         var seed = i * 2 + 1;
-        html += '<div class="match' + (m.a && m.b ? '' : ' is-bye') + '" data-key="' + r + '-' + i + '">' + matchRow(m, r, i, seed) + '</div>';
+        html += '<div class="match' + (m.a && m.b ? '' : ' is-bye') + '" data-key="' + r + '-' + i + '">' + matchRow(d, m, r, i, seed) + '</div>';
       });
       html += '</div>';
       wrap.innerHTML = html;
       board.appendChild(wrap);
     });
-    var title = $('#bracket-title');
-    if (title) title.textContent = d.name + ' · ' + d.mode;
-    var meta = $('#bracket-meta');
-    if (meta) {
-      meta.innerHTML = '<span class="tag"><b>' + dateLabel(d.date) + '</b> ' + d.start + '–' + d.end + ' MSK</span>' +
-        '<span class="tag">' + esc(d.format) + '</span>' +
-        '<span class="tag is-gold">' + esc(d.bo) + '</span>' +
-        '<span class="tag">' + participants(d).length + ' ' + plural(participants(d).length, ['боец', 'бойца', 'бойцов']) + '</span>';
-    }
     var playable = 0, decided = 0;
     rounds.forEach(function (matches) {
       matches.forEach(function (m) {
         if (m.a && m.b) { playable++; if (m.winner) decided++; }
       });
     });
-    /* знаменатель — сколько матчей вообще нужно сыграть (n−1), а не сколько
-       уже заполнено: иначе «0/2» превращается в «1/3» и путает */
-    var expected = Math.max(1, participants(d).length - 1);
+    /* знаменатель — сколько матчей нужно сыграть (n−1), а не сколько заполнено */
+    var expected = Math.max(1, entrants(d).length - 1);
     var prog = $('#bracket-progress'), fill = $('#bracket-progress-fill');
     if (prog) prog.textContent = decided + ' / ' + expected;
     if (fill) fill.style.setProperty('--w', Math.round(decided / expected * 100) + '%');
-    var sel = $('#bracket-select');
-    if (sel && sel.value !== d.id) sel.value = d.id;
     requestAnimationFrame(function () { drawBracketLines(rounds); });
   }
 
@@ -705,27 +763,155 @@
     svg.innerHTML = paths.join('');
   }
 
-  function renderChampion() {
+  function renderChampion(d) {
     var slot = $('#champion-slot');
     if (!slot) return;
-    var d = discById(state.bracketId);
+    d = d || discById(state.bracketId);
+    if (!d || isBoard(d)) { slot.innerHTML = ''; return; }
     var rounds = buildRounds(d);
     var final = rounds[rounds.length - 1][0];
-    var champ = final.winner ? playerById(final.winner) : null;
+    var champ = final.winner ? entrantByKey(d, final.winner) : null;
     if (!champ) {
       slot.innerHTML = '<div class="champion-empty glass"><span class="ce-icon" aria-hidden="true">⚔️</span>' +
-        '<div><b>Финал ещё не сыгран</b><span>Кликай по бойцам в сетке — или запусти автопрогноз.</span></div></div>';
+        '<div><b>Финал ещё не сыгран</b><span>Кликай по участникам в сетке — или запусти автопрогноз.</span></div></div>';
       return;
     }
+    var first = champ.players[0] || {};
     slot.innerHTML = '<div class="champion-card">' +
       '<span class="champ-crown" aria-hidden="true">👑</span>' +
-      '<span class="avatar champ-avatar" style="--c1:' + champ.c1 + ';--c2:' + champ.c2 + '"><span>' + esc(champ.initials) + '</span></span>' +
+      '<span class="avatar champ-avatar" style="--c1:' + (first.c1 || '#f3cd7c') + ';--c2:' + (first.c2 || '#e8ac4a') + '"><span>' + esc(first.initials || '★') + '</span></span>' +
       '<div class="champ-body"><span class="champ-label">Чемпион · ' + esc(d.name) + ' ' + esc(d.mode) + '</span>' +
-      '<div class="champ-name">' + esc(champ.nick) + '</div>' +
-      '<div class="champ-sub">' + esc(champ.name) + ' · ' + dateLabel(d.date) + ' · ' + esc(d.format) + '</div></div>' +
+      '<div class="champ-name">' + esc(champ.label) + '</div>' +
+      '<div class="champ-sub">' + esc(first.name || '') + ' · ' + esc(seriesOf(d)) + ' · ' + esc(d.format) + '</div></div>' +
       '<div class="champ-actions"><button class="btn btn-primary btn-sm" type="button" data-action="share-champ">Поделиться</button>' +
-      '<button class="btn btn-ghost btn-sm" type="button" data-action="open-champ" data-player="' + champ.id + '">Профиль</button></div>' +
+      '<button class="btn btn-ghost btn-sm" type="button" data-action="open-champ" data-player="' + esc(first.id || '') + '">Профиль</button></div>' +
       '</div>';
+  }
+
+  /* ── заезды: 1-е / 2-е / 3-е место, без сетки ─────────────────────────── */
+  function boardSelectOptions(d, st, place) {
+    var busy = {};
+    [1, 2, 3].forEach(function (p) { if (p !== place && st[p]) busy[st[p]] = 1; });
+    return '<option value="">— не занято —</option>' + entrants(d).map(function (e) {
+      return '<option value="' + esc(e.key) + '"' + (st[place] === e.key ? ' selected' : '') + (busy[e.key] ? ' disabled' : '') + '>' +
+        esc(e.label) + (e.team ? ' · 2×2' : '') + '</option>';
+    }).join('');
+  }
+
+  function renderBoard(d) {
+    var host = $('#board-podium');
+    if (!host) return;
+    var st = boardState(d.id);
+    var c = compOf(d);
+    var places = c.places || ['1-е место', '2-е место', '3-е место'];
+    host.innerHTML = [1, 2, 3].map(function (place) {
+      var e = st[place] ? entrantByKey(d, st[place]) : null;
+      var pts = placePoints(d, place);
+      return '<div class="podium-slot place-' + place + (e ? ' is-filled' : '') + '">' +
+        '<div class="podium-rank" aria-hidden="true">' + place + '</div>' +
+        '<div class="podium-meta">' +
+          '<span class="podium-label">' + esc(places[place - 1] || (place + '-е место')) + '</span>' +
+          (e
+            ? '<div class="podium-team">' + e.players.map(function (p) {
+                return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>';
+              }).join('') + '<b>' + esc(e.label) + '</b></div>'
+            : '<div class="podium-empty">место свободно</div>') +
+          '<span class="podium-points">' + (e ? '+' + fmtPoints(pts) + ' очк.' : '— очк.') + '</span>' +
+        '</div>' +
+        '<span class="select-wrap"><select class="select podium-select" data-place="' + place + '" aria-label="' + esc(places[place - 1] || ('Место ' + place)) + '">' +
+          boardSelectOptions(d, st, place) + '</select></span>' +
+        '</div>';
+    }).join('');
+
+    var list = $('#board-list');
+    if (list) {
+      var sorted = entrants(d).slice().sort(function (a, b) { return (b.strength || 0) - (a.strength || 0); });
+      list.innerHTML = sorted.map(function (e, i) {
+        var place = [1, 2, 3].filter(function (p) { return st[p] === e.key; })[0] || 0;
+        return '<button class="board-row' + (place ? ' is-placed place-' + place : '') + '" type="button" data-board-pick="' + esc(e.key) + '">' +
+          '<span class="br-rank">' + (place ? '#' + place : pad(i + 1)) + '</span>' +
+          '<span class="br-team">' + e.players.map(function (p) {
+            return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>';
+          }).join('') + '<b>' + esc(e.label) + '</b></span>' +
+          '<span class="br-val">' + (place ? '+' + fmtPoints(placePoints(d, place)) : '—') + '</span>' +
+          '</button>';
+      }).join('');
+    }
+
+    var note = $('#board-note');
+    if (note) {
+      var filled = [1, 2, 3].filter(function (p) { return !!st[p]; }).length;
+      note.innerHTML = '<b>' + esc(c.metric || 'Результат заезда') + '</b> · ' + esc(c.win || '') +
+        '<span>Заполнено мест: ' + filled + ' / 3. Клик по участнику ставит его на ближайшее свободное место, повторный — снимает.</span>';
+    }
+  }
+
+  function renderComp() {
+    var d = discById(state.bracketId) || queue()[0];
+    if (!d) return;
+    state.bracketId = d.id;
+    var boardMode = isBoard(d);
+    document.body.classList.toggle('is-board-mode', boardMode);
+    var body = $('#bracket-body'), view = $('#board-view');
+    if (body) body.hidden = boardMode;
+    if (view) view.hidden = !boardMode;
+    var ba = $('#bracket-actions'), ra = $('#board-actions');
+    if (ba) ba.hidden = boardMode;
+    if (ra) ra.hidden = !boardMode;
+    var sel = $('#bracket-select');
+    if (sel && sel.value !== d.id) sel.value = d.id;
+    renderCompHead(d);
+    if (boardMode) renderBoard(d);
+    else { renderBracket(d); renderChampion(d); }
+  }
+
+  function boardPick(key) {
+    var d = discById(state.bracketId);
+    if (!d || !isBoard(d)) return;
+    var st = boardState(d.id);
+    var current = [1, 2, 3].filter(function (p) { return st[p] === key; })[0];
+    if (current) {
+      st[current] = '';
+      sound(380, 0.05, 'triangle', 0.03);
+    } else {
+      var free = [1, 2, 3].filter(function (p) { return !st[p]; })[0];
+      if (!free) { toast('Все три места уже заняты — сними кого-то или нажми «Заново»', '🥇'); return; }
+      st[free] = key;
+      sound(620 + free * 80, 0.05, 'triangle', 0.03);
+      haptic(10);
+    }
+    saveBoards();
+    renderBoard(d);
+  }
+
+  function boardAuto() {
+    var d = discById(state.bracketId);
+    if (!d || !isBoard(d)) return;
+    var keys = entrants(d).map(function (e) { return e.key; });
+    var st = boardState(d.id);
+    for (var i = keys.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = keys[i]; keys[i] = keys[j]; keys[j] = t;
+    }
+    st[1] = keys[0] || '';
+    st[2] = keys[1] || '';
+    st[3] = keys[2] || '';
+    saveBoards();
+    renderBoard(d);
+    renderCompHead(d);
+    sound(700, 0.05, 'sine', 0.03);
+    confetti();
+    toast('Подиум собран: <b>' + esc(st[1] ? (entrantByKey(d, st[1]) || {}).label : '—') + '</b> забирает первое место', '🥇');
+  }
+
+  function boardReset() {
+    var d = discById(state.bracketId);
+    if (!d) return;
+    state.boards[d.id] = { 1: '', 2: '', 3: '' };
+    saveBoards();
+    renderBoard(d);
+    sound(360, 0.06, 'sine', 0.03);
+    toast('Подиум очищен', '↺');
   }
 
   var autoTimer = null;
@@ -739,11 +925,11 @@
   function autoBracket() {
     var d = discById(state.bracketId);
     if (!d) return;
+    if (isBoard(d)) { boardAuto(); return; }
     if (state.autoRunning) { cancelAuto(); toast('Автопрогноз остановлен', '⏹'); return; }
     state.autoRunning = true;
     var btn = $('[data-action="auto-bracket"]');
     if (btn) { btn.disabled = false; btn.innerHTML = '<span aria-hidden="true">⏹</span><span>Стоп</span>'; }
-    var rounds = buildRounds(d);
     var step = function (r) {
       if (state.bracketId !== d.id) { cancelAuto(); return; }
       var nowRounds = buildRounds(d);
@@ -751,14 +937,14 @@
       var st = bracketState(d.id);
       nowRounds[r].forEach(function (m, i) {
         if (m.a && m.b && !m.winner) {
-          var a = (playerById(m.a) && playerById(m.a).disciplines || []).length;
-          var b = (playerById(m.b) && playerById(m.b).disciplines || []).length;
+          var a = (entrantByKey(d, m.a) || {}).strength || 1;
+          var b = (entrantByKey(d, m.b) || {}).strength || 1;
           var pa = 0.5 + (a - b) / 60;
           st.winners[r + '-' + i] = Math.random() < pa ? m.a : m.b;
         }
       });
       saveBrackets();
-      renderBracket(); renderChampion();
+      renderBracket(d); renderChampion(d);
       sound(520 + r * 90, 0.05, 'triangle', 0.025);
       if (r < nowRounds.length - 1) autoTimer = setTimeout(function () { step(r + 1); }, 420);
       else finish();
@@ -769,49 +955,51 @@
       if (btn) { btn.disabled = false; if (btn.dataset.label) btn.innerHTML = btn.dataset.label; }
       var roundsNow = buildRounds(d);
       var final = roundsNow[roundsNow.length - 1][0];
-      var champ = final.winner ? playerById(final.winner) : null;
-      if (champ) { confetti(); chime(); toast('Автопрогноз готов: <b>' + esc(champ.nick) + '</b> забирает «' + esc(d.name) + ' ' + esc(d.mode) + '»', '👑'); }
+      var champ = final.winner ? entrantByKey(d, final.winner) : null;
+      if (champ) { confetti(); chime(); toast('Автопрогноз готов: <b>' + esc(champ.label) + '</b> забирает «' + esc(d.name) + ' ' + esc(d.mode) + '»', '👑'); }
     };
     step(0);
   }
 
   function pickBracket(btn) {
     var key = btn.getAttribute('data-key');
-    var player = btn.getAttribute('data-player');
-    if (!key || !player) return;
+    var entrant = btn.getAttribute('data-entrant') || btn.getAttribute('data-player');
+    if (!key || !entrant) return;
     var d = discById(state.bracketId);
+    if (!d) return;
     var rounds = buildRounds(d);
     var parts = key.split('-');
     var m = rounds[+parts[0]] && rounds[+parts[0]][+parts[1]];
     if (!m) return;
     if (!m.a || !m.b) { toast('Соперник ещё не определён — сначала доиграй предыдущий раунд', '⏳'); return; }
     var st = bracketState(d.id);
-    if (st.winners[key] === player) delete st.winners[key];
-    else st.winners[key] = player;
+    if (st.winners[key] === entrant) delete st.winners[key];
+    else st.winners[key] = entrant;
     saveBrackets();
     haptic(st.winners[key] ? 14 : 8);
     sound(st.winners[key] ? 720 : 380, 0.06, 'triangle', 0.03);
-    renderBracket();
-    renderChampion();
+    renderBracket(d);
+    renderChampion(d);
     var roundsNow = buildRounds(d);
     var final = roundsNow[roundsNow.length - 1][0];
     if (final.winner) { slotCelebrate(); }
   }
   var celebrated = {};
   function slotCelebrate() {
-    var key = state.bracketId + ':' + buildRounds(discById(state.bracketId)).map(function (r) { return r.map(function (m) { return m.winner; }).join(','); }).join('|');
+    var d = discById(state.bracketId);
+    var key = state.bracketId + ':' + buildRounds(d).map(function (r) { return r.map(function (m) { return m.winner; }).join(','); }).join('|');
     if (celebrated[key]) return;
     celebrated[key] = true;
     confetti(); chime();
-    var champ = playerById(buildRounds(discById(state.bracketId)).slice(-1)[0][0].winner);
-    if (champ) toast('Чемпион «' + esc(discById(state.bracketId).name) + '» — <b>' + esc(champ.nick) + '</b>', '🏆');
+    var champ = entrantByKey(d, buildRounds(d).slice(-1)[0][0].winner);
+    if (champ) toast('Чемпион «' + esc(d.name) + '» — <b>' + esc(champ.label) + '</b>', '🏆');
   }
 
   function fillBracketSelect() {
     var sel = $('#bracket-select');
     if (!sel) return;
-    sel.innerHTML = DISC.map(function (d) {
-      return '<option value="' + d.id + '">' + d.icon + ' ' + esc(d.name) + ' · ' + esc(d.mode) + '</option>';
+    sel.innerHTML = queue().map(function (d) {
+      return '<option value="' + d.id + '">' + d.icon + ' ' + esc(d.name) + ' · ' + esc(d.mode) + ' · слот ' + d.order + '</option>';
     }).join('');
     sel.value = state.bracketId;
   }
@@ -880,9 +1068,8 @@
     var head = '<thead><tr><th>Дисциплина</th>' + state.players.map(function (p) {
       return '<th><div class="mx-player"><span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span><span>' + esc(p.nick) + '</span></div></th>';
     }).join('') + '</tr></thead>';
-    var today = mskToday();
-    var body = '<tbody>' + DISC.map(function (d) {
-      return '<tr' + (d.date === today ? ' class="is-today"' : '') + '><th><div class="mx-disc"><i aria-hidden="true">' + d.icon + '</i>' + esc(d.name) + ' ' + esc(d.mode) + '<small>' + dateLabel(d.date) + '</small></div></th>' +
+    var body = '<tbody>' + queue().map(function (d) {
+      return '<tr><th><div class="mx-disc"><i aria-hidden="true">' + d.icon + '</i>' + esc(d.name) + ' ' + esc(d.mode) + '<small>слот ' + d.order + '</small></div></th>' +
         state.players.map(function (p) {
           var on = (p.disciplines || []).indexOf(d.id) >= 0;
           return '<td><button class="matrix-dot' + (on ? ' on' : '') + '" type="button" data-player="' + p.id + '" data-disc="' + d.id + '" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '" aria-label="' + esc((on ? 'Да: ' : 'Нет: ') + p.nick + ' · ' + d.name + ' ' + d.mode) + '"></button></td>';
@@ -1093,39 +1280,48 @@
   }
 
   /* ─────────────────────────── schedule ─────────────────────────── */
+  function fmtMinutes(m) {
+    if (!m) return '—';
+    var h = Math.floor(m / 60), rest = m % 60;
+    return h ? h + 'ч' + (rest ? ' ' + rest + 'м' : '') : m + 'м';
+  }
   function renderSchedule() {
     var host = $('#timeline');
     if (!host) return;
     var groups = new Map();
-    DISC.slice().sort(function (a, b) { return discStart(a) - discStart(b); }).forEach(function (d) {
-      if (!groups.has(d.date)) groups.set(d.date, []);
-      groups.get(d.date).push(d);
+    queue().forEach(function (d) {
+      if (!groups.has(d.wave)) groups.set(d.wave, []);
+      groups.get(d.wave).push(d);
     });
-    var endDay = (EVENT.end || '').slice(0, 10);
-    if (endDay && !groups.has(endDay)) groups.set(endDay, []);
-    var today = mskToday();
     host.innerHTML = Array.from(groups.entries()).map(function (entry) {
-      var date = entry[0], list = entry[1];
-      var dt = new Date(date + 'T12:00:00+03:00');
-      return '<div class="day-card' + (date === today ? ' is-today' : '') + '">' +
-        '<div class="day-head"><span class="day-num">' + date.slice(8, 10) + '</span><span class="day-name">' + weekday(date) + '</span>' +
-        '<span class="day-count">' + (list.length ? list.length + ' ' + plural(list.length, ['старт', 'старта', 'стартов']) : 'резерв') + (date === today ? ' · сегодня' : '') + '</span></div>' +
-        '<div class="day-list">' + (list.length ? list.map(function (d) {
+      var wave = entry[0], list = entry[1];
+      var total = list.reduce(function (sum, d) { return sum + (d.duration || 0); }, 0);
+      return '<div class="day-card wave-card">' +
+        '<div class="day-head"><span class="day-num">' + pad(wave) + '</span><span class="day-name">Волна</span>' +
+        '<span class="day-count">' + list.length + ' ' + plural(list.length, ['старт', 'старта', 'стартов']) + ' · ~' + fmtMinutes(total) + '</span></div>' +
+        '<div class="day-list">' + list.map(function (d) {
           return '<button class="slot" type="button" data-disc-id="' + d.id + '" style="--a:' + d.accent + '">' +
-            '<span class="slot-time">' + d.start + '</span><span class="slot-icon" aria-hidden="true">' + d.icon + '</span>' +
+            '<span class="slot-time">~' + d.time + '</span><span class="slot-icon" aria-hidden="true">' + d.icon + '</span>' +
             '<span class="slot-name">' + esc(d.name) + ' ' + esc(d.mode) + '<small>' + esc(d.format) + '</small></span>' +
-            '<span class="slot-dur">' + durationLabel(d) + '</span></button>';
-        }).join('') : '<div class="slot-catchup"><span class="slot-time">ALL DAY</span><span class="slot-icon" aria-hidden="true">⏳</span><span class="slot-name">Окно доигрывания<small>перенесённые матчи · по согласованию</small></span><span class="slot-dur">1д</span></div>') + '</div></div>';
-    }).join('');
+            '<span class="slot-dur">' + esc(isBoard(d) ? 'заезд' : seriesOf(d)) + '</span></button>';
+        }).join('') + '</div></div>';
+    }).join('') +
+      '<div class="day-card wave-card is-catchup"><div class="day-head"><span class="day-num">∞</span><span class="day-name">Окно доигрывания</span>' +
+      '<span class="day-count">по согласованию</span></div><div class="day-list">' +
+      '<div class="slot-catchup"><span class="slot-time">TBD</span><span class="slot-icon" aria-hidden="true">⏳</span>' +
+      '<span class="slot-name">Перенесённые матчи<small>между дисциплинами · с организатором</small></span><span class="slot-dur">∞</span></div>' +
+      '</div></div>';
 
-    var now = Date.now();
-    var upcoming = DISC.slice().sort(function (a, b) { return discStart(a) - discStart(b); }).filter(function (d) { return discEnd(d) > now; });
-    var next = upcoming[0] || DISC.slice().sort(function (a, b) { return discEnd(a) - discEnd(b); }).slice(-1)[0];
+    var next = queue()[0];
     var nextBox = $('#next-event');
     if (nextBox && next) {
-      nextBox.innerHTML = '<span class="ne-label"><i class="status-dot" aria-hidden="true"></i> ' + (discStart(next) <= now && now <= discEnd(next) ? 'идёт сейчас' : 'следующий старт') + '</span>' +
+      nextBox.innerHTML = '<span class="ne-label"><i class="status-dot" aria-hidden="true"></i> первый в очереди</span>' +
         '<b>' + next.icon + ' ' + esc(next.name) + ' ' + esc(next.mode) + '</b>' +
-        '<span>' + dateLabel(next.date) + ' · ' + next.start + '–' + next.end + ' MSK · ' + esc(next.format) + '</span>';
+        '<span>слот ' + next.order + ' · ~' + next.time + ' MSK · ' + esc(next.format) + '</span>';
+    }
+    var note = $('#dates-note');
+    if (note) {
+      note.innerHTML = '<b>' + esc(EVENT.dateLabel || 'Даты уточняются') + '</b><span>' + esc(EVENT.dateNote || '') + '</span>';
     }
   }
 
@@ -1137,16 +1333,8 @@
   function tickClocks() {
     var clock = $('#event-clock');
     if (clock) clock.innerHTML = mskClock() + '<small>MSK</small>';
-    var now = Date.now();
-    var end = new Date(EVENT.end).getTime();
-    var start = new Date(EVENT.start).getTime();
-    var left = end - now;
-    var label = now < start ? 'до старта' : left > 0 ? 'до финала' : 'турнир завершён';
-    var val = now < start ? fmtDelta(start - now) : left > 0 ? fmtDelta(left) : '00:00:00';
-    var cd = $('#event-countdown'); if (cd) cd.textContent = val;
-    var jt = $('#join-timer'); if (jt) jt.textContent = val;
-    var jl = $('#join-timer') && $('#join-timer').parentNode && $('#join-timer').parentNode.querySelector('small');
-    if (jl) jl.textContent = label;
+    var cd = $('#event-countdown'); if (cd) cd.textContent = 'TBD';
+    var jt = $('#join-timer'); if (jt) jt.textContent = 'TBD';
     syncLivePill();
   }
 
@@ -1195,7 +1383,11 @@
     }
     var count = $('#join-count'); if (count) count.textContent = String(state.players.length);
     var status = $('#join-status-text');
-    if (status) status.textContent = Date.now() > new Date(EVENT.end).getTime() ? 'заявки закрыты' : 'заявки открыты';
+    if (status) status.textContent = 'заявки открыты · даты уточняются';
+    var timer = $('#join-timer');
+    if (timer) timer.textContent = 'TBD';
+    var timerLabel = timer && timer.parentNode && timer.parentNode.querySelector('small');
+    if (timerLabel) timerLabel.textContent = 'Даты старта';
   }
 
   /* ─────────────────────────── modal ─────────────────────────── */
@@ -1222,23 +1414,25 @@
     var d = discById(id);
     if (!d) return;
     var list = participants(d);
-    var badge = dateBadge(d);
+    var c = compOf(d);
     var html = '<div class="md-hero" style="--a:' + d.accent + ';--b:' + d.accent2 + '">' +
       '<span class="md-icon" aria-hidden="true">' + d.icon + '</span>' +
-      '<div><span class="md-kicker">' + dateLabel(d.date) + ' · ' + d.start + '–' + d.end + ' MSK · ' + badge.text + '</span>' +
+      '<div><span class="md-kicker">слот ' + d.order + ' · ~' + d.time + ' MSK · даты уточняются</span>' +
       '<h3 class="md-title">' + esc(d.name) + ' <span style="color:' + d.accent + '">' + esc(d.mode) + '</span></h3>' +
-      '<div class="md-sub">' + esc(d.format) + ' · ' + esc(d.bo) + ' · ' + (d.type === 'duo' ? 'дуо-режим' : 'соло') + '</div></div></div>' +
-      '<div class="md-meta"><div class="md-meta-item"><small>дата</small><b>' + weekday(d.date) + ', ' + dateLabel(d.date) + '</b></div>' +
-      '<div class="md-meta-item"><small>время</small><b>' + d.start + '–' + d.end + ' MSK</b></div>' +
-      '<div class="md-meta-item"><small>формат</small><b>' + esc(d.bo) + ' · ' + durationLabel(d) + '</b></div>' +
+      '<div class="md-sub">' + esc(d.format) + ' · ' + esc(isBoard(d) ? 'заезд' : seriesOf(d)) + ' · ' + (d.type === 'duo' ? 'дуо-режим' : 'соло') + '</div></div></div>' +
+      '<div class="md-meta"><div class="md-meta-item"><small>слот</small><b>#' + d.order + ' в очереди</b></div>' +
+      '<div class="md-meta-item"><small>время</small><b>~' + d.time + ' MSK · ' + durationLabel(d) + '</b></div>' +
+      '<div class="md-meta-item"><small>формат</small><b>' + esc(isBoard(d) ? (c.metric || 'заезд') : (c.seriesNote || seriesOf(d))) + '</b></div>' +
       '<div class="md-meta-item"><small>участники</small><b>' + list.length + ' из ' + state.players.length + '</b></div></div>' +
-      '<div class="md-section"><h4>Правила</h4><div class="md-rules">' + esc(d.rules) + '</div></div>' +
+      '<div class="md-section"><h4>Победа</h4><div class="md-rules"><b>' + esc(c.win || '—') + '</b><br>' + esc(d.rules) + '</div></div>' +
+      '<div class="md-section"><h4>Регламент</h4><ul class="md-rule-list">' + (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+      ((c.tbd || []).length ? '<div class="md-tbd"><span>уточнить до старта</span>' + c.tbd.map(function (t) { return '<i>' + esc(t) + '</i>'; }).join('') + '</div>' : '') + '</div>' +
       '<div class="md-section"><h4>Заявились</h4><div class="md-people">' + (list.length ? list.map(function (p) {
         return '<button class="md-person" type="button" data-md-player="' + p.id + '"><span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' + esc(p.nick) + '</button>';
       }).join('') : '<span class="modal-info">Пока никто — стань первым.</span>') + '</div></div>' +
-      '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-grid="' + d.id + '">Открыть сетку</button>' +
+      '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-grid="' + d.id + '">' + (isBoard(d) ? 'Открыть заезд' : 'Открыть сетку') + '</button>' +
       '<button class="btn btn-ghost" type="button" data-md-share-disc="' + d.id + '">Поделиться</button>' +
-      '<button class="btn btn-ghost" type="button" data-md-ics="' + d.id + '">В календарь</button></div>';
+      '<button class="btn btn-ghost" type="button" data-md-ics="' + d.id + '">Когда играем</button></div>';
     openModal(html);
   }
   function playerModal(id) {
@@ -1280,7 +1474,7 @@
     { name: 'Автопрогноз сетки', type: 'Действие', icon: '⚡', hint: 'сетка', run: function () { autoBracket(); } },
     { name: 'Перемешать пары', type: 'Действие', icon: '🔀', hint: 'сетка', run: function () { shuffleBracket(); } },
     { name: 'Сбросить сетку', type: 'Действие', icon: '↺', hint: 'сетка', run: function () { resetBracket(); } },
-    { name: 'Добавить расписание в календарь', type: 'Действие', icon: '📅', hint: 'ics', run: function () { downloadICS(); } },
+    { name: 'Когда играем', type: 'Действие', icon: '📅', hint: 'даты', run: function () { datesTbd(); } },
     { name: 'Копировать ссылку', type: 'Действие', icon: '🔗', hint: 'share', run: function () { sharePage(); } },
     { name: 'Сменить тему', type: 'Действие', icon: '🌗', hint: 'тема', run: function () { toggleTheme(); } },
     { name: 'Звук вкл/выкл', type: 'Действие', icon: '🔊', hint: 'звук', run: function () { toggleSound(); } },
@@ -1290,7 +1484,7 @@
   function paletteSource() {
     var items = [];
     DISC.forEach(function (d) {
-      items.push({ name: d.name + ' · ' + d.mode, type: 'Дисциплина', icon: d.icon, hint: dateLabel(d.date) + ' ' + d.start, kw: discKeys(d), run: function () { discModal(d.id); } });
+      items.push({ name: d.name + ' · ' + d.mode, type: 'Дисциплина', icon: d.icon, hint: 'слот ' + d.order + ' · ~' + d.time, kw: discKeys(d), run: function () { discModal(d.id); } });
     });
     state.players.forEach(function (p) {
       items.push({ name: p.nick, type: 'Боец', icon: p.emoji || '👤', hint: (p.disciplines || []).length + ' арен', kw: [p.name, p.nick, (p.aliases || []).join(' ')].join(' '), run: function () { playerModal(p.id); } });
@@ -1316,7 +1510,7 @@
         '<span class="pal-icon" aria-hidden="true">' + it.icon + '</span>' +
         '<span class="pal-body"><span class="pal-name">' + esc(it.name) + '</span><span class="pal-type">' + esc(it.type) + '</span></span>' +
         '<span class="pal-hint">' + esc(it.hint || '') + '</span></button>';
-    }).join('') : '<div class="pal-empty">Ничего не нашлось. Попробуй «дота», «сетка», «Сева» или «календарь».</div>';
+    }).join('') : '<div class="pal-empty">Ничего не нашлось. Попробуй «дота», «сетка», «заезд» или «Сева».</div>';
   }
 
   function openPalette() {
@@ -1378,11 +1572,12 @@
     cancelAuto();
     var d = discById(state.bracketId);
     if (!d) return;
+    if (isBoard(d)) { boardReset(); return; }
     var st = bracketState(d.id);
     st.seed = (st.seed * 1664525 + 1013904223) >>> 0;
     st.winners = {};
     saveBrackets();
-    renderBracket(); renderChampion();
+    renderComp();
     sound(460, 0.07, 'triangle', 0.03);
     toast('Пары «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
   }
@@ -1390,9 +1585,10 @@
     cancelAuto();
     var d = discById(state.bracketId);
     if (!d) return;
+    if (isBoard(d)) { boardReset(); return; }
     bracketState(d.id).winners = {};
     saveBrackets();
-    renderBracket(); renderChampion();
+    renderComp();
     sound(360, 0.07, 'sine', 0.03);
     toast('Сетка «' + esc(d.name) + ' ' + esc(d.mode) + '» сброшена', '↺');
   }
@@ -1403,7 +1599,7 @@
     saveBrackets();
     var sel = $('#bracket-select');
     if (sel) sel.value = id;
-    renderBracket(); renderChampion();
+    renderComp();
     sound(680, 0.04, 'sine', 0.02);
   }
   function haptic(ms) {
@@ -1474,13 +1670,25 @@
       toast(ok ? 'Ссылка скопирована — кидай в чат' : 'Не удалось скопировать, но ссылка в адресной строке', ok ? '🔗' : 'ℹ️');
     });
   }
+  function shareBoard() {
+    var d = discById(state.bracketId);
+    if (!d) return;
+    var st = boardState(d.id);
+    var parts = [1, 2, 3].map(function (place) {
+      var e = st[place] ? entrantByKey(d, st[place]) : null;
+      return place + ') ' + (e ? e.label : '—');
+    });
+    copy('GAMEpiada · ' + d.name + ' ' + d.mode + ' — ' + parts.join(' · ') + '. ' + EVENT.siteUrl + '#bracket')
+      .then(function (ok) { toast(ok ? 'Подиум скопирован' : 'Ссылка: ' + EVENT.siteUrl + '#bracket', '🥇'); });
+  }
   function shareCurrentBracket() {
     var d = discById(state.bracketId);
     if (!d) return;
+    if (isBoard(d)) { shareBoard(); return; }
     var rounds = buildRounds(d);
     var champ = rounds[rounds.length - 1][0].winner;
-    var p = champ ? playerById(champ) : null;
-    var text = 'Сетка GAMEpiada · ' + d.name + ' ' + d.mode + (p ? ' — чемпион: ' + p.nick : '') + '. Собери свою: ';
+    var p = champ ? entrantByKey(d, champ) : null;
+    var text = 'Сетка GAMEpiada · ' + d.name + ' ' + d.mode + ' · ' + seriesOf(d) + (p ? ' — чемпион: ' + p.label : '') + '. Собери свою: ';
     copy(text + EVENT.siteUrl + '#bracket').then(function (ok) {
       toast(ok ? 'Сетка скопирована' : 'Ссылка: ' + EVENT.siteUrl + '#bracket', '🏟️');
     });
@@ -1493,36 +1701,15 @@
       toast(ok ? 'Дуо скопировано' : 'Ссылка: ' + EVENT.siteUrl + '#duo', '🧬');
     });
   }
+  function datesTbd() {
+    toast('Даты ещё не объявлены. Порядок слотов зафиксирован — дни организатор назовёт в Discord.', '📅');
+    sound(520, 0.05, 'sine', 0.02);
+  }
   function downloadICS(id) {
-    var list = id ? [discById(id)].filter(Boolean) : DISC;
-    function stamp(d) {
-      var t = new Date(d.getTime() + 3 * 3600000);
-      return t.getUTCFullYear() + pad(t.getUTCMonth() + 1) + pad(t.getUTCDate()) + 'T' + pad(t.getUTCHours()) + pad(t.getUTCMinutes()) + '00Z';
-    }
-    var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//GAMEpiada//Tournament//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:GAMEpiada'];
-    list.forEach(function (d) {
-      lines.push('BEGIN:VEVENT');
-      lines.push('UID:' + d.id + '-gamepiada@tournaments');
-      lines.push('DTSTAMP:' + stamp(new Date()));
-      lines.push('DTSTART:' + stamp(discStart(d)));
-      lines.push('DTEND:' + stamp(discEnd(d)));
-      lines.push('SUMMARY:' + d.name + ' ' + d.mode + ' — GAMEpiada');
-      lines.push('DESCRIPTION:' + (d.format + ' · ' + d.bo + '. ' + d.rules).replace(/\n/g, ' '));
-      lines.push('LOCATION:Discord GAMEpiada');
-      lines.push('URL:' + EVENT.siteUrl);
-      lines.push('END:VEVENT');
-    });
-    lines.push('END:VCALENDAR');
-    try {
-      var blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = id ? 'gamepiada-' + id + '.ics' : 'gamepiada-2026.ics';
-      document.body.appendChild(a); a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 500);
-      toast('Файл календаря готов', '📅');
-      sound(760, 0.06, 'sine', 0.03);
-    } catch (e) { toast('Не удалось собрать календарь', 'ℹ️'); }
+    /* Календарь собираем только когда организатор утвердит даты:
+       пустые или выдуманные слоты в .ics хуже, чем честное «TBD». */
+    if (!EVENT.start || EVENT.dateMode === 'tbd') { datesTbd(); return; }
+    datesTbd();
   }
 
   /* ─────────────────────────── live data ─────────────────────────── */
@@ -1674,8 +1861,7 @@
     renderTicker();
     renderDisc();
     fillBracketSelect();
-    renderBracket();
-    renderChampion();
+    renderComp();
     renderRoster();
     renderMatrix();
     fillDuoSelects();
@@ -1722,6 +1908,10 @@
       case 'reset-bracket': resetBracket(); break;
       case 'auto-bracket': autoBracket(); break;
       case 'ics': downloadICS(); break;
+      case 'dates': datesTbd(); break;
+      case 'board-auto': boardAuto(); break;
+      case 'board-reset': boardReset(); break;
+      case 'board-share': shareBoard(); break;
       case 'top': window.scrollTo({ top: 0, behavior: 'smooth' }); break;
       case 'open-champ': if (el && el.dataset.player) playerModal(el.dataset.player); break;
       case 'install': installApp(); break;
@@ -1765,8 +1955,10 @@
     if (slot) { discModal(slot.getAttribute('data-disc-id')); return; }
     var like = e.target.closest('[data-like]');
     if (like) { toggleLike(like.getAttribute('data-like')); return; }
-    var match = e.target.closest('#bracket-board .match-row[data-player]');
+    var match = e.target.closest('#bracket-board .match-row[data-entrant]');
     if (match) { pickBracket(match); return; }
+    var boardRow = e.target.closest('[data-board-pick]');
+    if (boardRow) { boardPick(boardRow.getAttribute('data-board-pick')); return; }
     var chartToggle = e.target.closest('[data-chart-toggle]');
     if (chartToggle) { state.chartOpen = !state.chartOpen; renderStats(); return; }
     var filter = e.target.closest('#disc-filters [data-filter]');
@@ -1794,7 +1986,7 @@
     var mdShareDisc = e.target.closest('[data-md-share-disc]');
     if (mdShareDisc) {
       var dd = discById(mdShareDisc.getAttribute('data-md-share-disc'));
-      copy(dd.name + ' ' + dd.mode + ' — GAMEpiada, ' + dateLabel(dd.date) + ' в ' + dd.start + ' MSK. ' + EVENT.siteUrl).then(function () { toast('Ссылка на дисциплину скопирована', '🔗'); });
+      copy(dd.name + ' ' + dd.mode + ' — GAMEpiada, слот ' + dd.order + ' (~' + dd.time + ' MSK, даты уточняются). ' + EVENT.siteUrl).then(function () { toast('Ссылка на дисциплину скопирована', '🔗'); });
       return;
     }
     var mdSharePlayer = e.target.closest('[data-md-share-player]');
@@ -1864,6 +2056,19 @@
     if (e.target.id === 'bracket-select') setBracketDisc(e.target.value);
     else if (e.target.id === 'duo-a') { state.duoA = e.target.value; renderDuo(); sound(600, 0.04, 'sine', 0.02); }
     else if (e.target.id === 'duo-b') { state.duoB = e.target.value; renderDuo(); sound(640, 0.04, 'sine', 0.02); }
+    else if (e.target.classList && e.target.classList.contains('podium-select')) {
+      var d = discById(state.bracketId);
+      var place = Number(e.target.getAttribute('data-place'));
+      var st = d ? boardState(d.id) : null;
+      if (d && st) {
+        var val = e.target.value;
+        [1, 2, 3].forEach(function (p) { if (p !== place && st[p] === val) st[p] = ''; });
+        st[place] = val;
+        saveBoards();
+        renderBoard(d);
+        sound(val ? 640 : 380, 0.05, 'triangle', 0.03);
+      }
+    }
   });
 
   /* scroll & resize */
