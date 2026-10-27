@@ -125,6 +125,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('hero dates tbd', /уточня/i.test($('#hero-dates').parentElement.textContent), $('#hero-dates').parentElement.textContent.replace(/\s+/g, ' ').trim());
   check('no custom cursor/canvas', !$('#cursor') && !$('#stars') && !$('#spotlight'), 'removed');
   check('bracket select = 17', qa('#bracket-select option') === 17, qa('#bracket-select option'));
+  const artCards = $$('#disc-grid .disc-card');
+  check('каждая карточка с арт-фоном', artCards.every((c) => !!c.querySelector('.disc-art')), qa('#disc-grid .disc-art'));
+  const artSrcs = $$('#disc-grid .disc-art').map((i) => i.getAttribute('src'));
+  check('арт-файлы на диске', artSrcs.length === 17 && artSrcs.every((src) => fs.existsSync(path.join(root, src))), artSrcs.filter((src) => !fs.existsSync(path.join(root, src))).join(',') || '17/17');
+  check('арт ленивый и декоративный', $$('#disc-grid .disc-art').every((i) => i.getAttribute('loading') === 'lazy' && i.getAttribute('alt') === ''), 'lazy+alt=""');
+  check('арт из assets/games', artSrcs.every((src) => /^assets\/games\/[a-z0-9]+\.jpg$/.test(src)), artSrcs[0]);
   check('competition starts in bracket', qa('#board-view .podium-slot') === 0 && $('#board-view').hidden, 'board hidden');
   check('bar rows = 10', qa('#bar-chart .bar-row') === 10, qa('#bar-chart .bar-row'));
   check('top bar is Dota', /Dota 2/.test($('#bar-chart .bar-row').textContent) && /7 · 88%/.test($('#bar-chart .bar-row').textContent), $('#bar-chart .bar-row').textContent.replace(/\s+/g, ' '));
@@ -145,6 +151,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('duo filter = 3', qa('#disc-grid .disc-card') === 3, qa('#disc-grid .disc-card'));
   $('#disc-filters [data-filter="board"]').click();
   check('board filter = 4', qa('#disc-grid .disc-card') === 4, qa('#disc-grid .disc-card'));
+  $('#disc-filters [data-filter="bracket"]').click();
+  check('bracket filter = 13', qa('#disc-grid .disc-card') === 13, qa('#disc-grid .disc-card'));
   $('#disc-filters [data-filter="all"]').click();
   $('#disc-search').value = 'шахматы';
   $('#disc-search').dispatchEvent(new window.Event('input', { bubbles: true }));
@@ -181,6 +189,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('[data-action="reset-bracket"]').click();
   check('reset clears winners', /^0 \//.test($('#bracket-progress').textContent.trim()), $('#bracket-progress').textContent);
 
+  check('bye-матчи без кнопок', qa('#bracket-board .match-row.is-auto') > 0 && qa('#bracket-board .match-row.is-auto[data-entrant]') === 0, qa('#bracket-board .match-row.is-auto') + ' автопроходов, кликабельных 0');
+  check('ожидание соперника не кликается', qa('#bracket-board .match-row.is-waiting[data-entrant]') === 0 && qa('#bracket-board .match-row.is-waiting') > 0, qa('#bracket-board .match-row.is-waiting'));
+
   // ── заезд: подиум 1 / 2 / 3 вместо сетки ───────────────────────────
   $('#bracket-select').value = 'tm';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -189,6 +200,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('podium slots = 3', qa('#board-view .podium-slot') === 3, qa('#board-view .podium-slot'));
   check('podium points', /3 \/ 2 \/ 1/.test($('#comp-brief').textContent), 'ok');
   check('board brief from regulation', /сумма времени|5 трасс/i.test($('#comp-brief').textContent), 'ok');
+  check('board shell has art', /assets\/games\/tm\.jpg/.test($('#comp-shell').getAttribute('style') || ''), ($('#comp-shell').getAttribute('style') || '').slice(0, 60));
+  check('board clears champion slot', !$('#champion-slot').innerHTML.length, 'empty');
   const boardRows = qa('#board-list .board-row');
   check('board list = entrants', boardRows >= 3, boardRows);
   $('[data-action="board-auto"]').click();
@@ -202,6 +215,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('#bracket-select').value = 'dota11';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
   check('back to bracket mode', !$('#bracket-body').hidden && $('#board-view').hidden, 'ok');
+  check('2×2 points split', $('.disc-card[data-disc-id="mcduo"] .tag.is-gold').textContent.trim() === '1,5 / 1 / 0,5', $('.disc-card[data-disc-id="mcduo"] .tag.is-gold').textContent.trim());
+  check('roster says заявка', /заявка/.test($('#roster-grid').textContent) && !/в игре с/.test($('#roster-grid').textContent), 'ok');
   check('dota11 series BO1', /BO1/.test($('#bracket-meta').textContent), $('#bracket-meta').textContent.replace(/\s+/g, ' ').slice(0, 70));
 
   // ── roster, matrix, duo ────────────────────────────────────────────

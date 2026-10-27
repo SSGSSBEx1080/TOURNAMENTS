@@ -1465,3 +1465,82 @@ body.is-idle .aurora-2,
 body.is-idle .aurora-3,
 body.is-idle .live-pill .dot,
 body.is-idle .eyebrow .pulse{animation-play-state:paused}
+
+/* ═══════════ 26 · арт-фоны карточек турниров ═══════════════════════════ */
+.disc-card{isolation:isolate;overflow:hidden}
+.disc-art{
+  position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:center;
+  opacity:.72;filter:saturate(1.05);
+  transform:scale(1.01);
+  transition:opacity .45s var(--ease),transform .6s var(--ease),filter .45s;
+  pointer-events:none;user-select:none;
+}
+.disc-card::after{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:
+    linear-gradient(178deg,rgba(4,7,13,.3) 0%,rgba(4,7,13,.62) 30%,rgba(4,7,13,.82) 52%,rgba(4,7,13,.94) 76%,rgba(4,7,13,.98) 100%),
+    radial-gradient(120% 80% at 12% 0%,color-mix(in srgb,var(--a) 26%,transparent),transparent 58%);
+}
+[data-theme="light"] .disc-art{opacity:.9;filter:saturate(1.02) contrast(1.02)}
+[data-theme="light"] .disc-card::after{
+  background:
+    linear-gradient(178deg,rgba(255,255,255,.42) 0%,rgba(255,255,255,.86) 44%,rgba(255,255,255,.97) 68%,#fff 100%),
+    radial-gradient(120% 80% at 12% 0%,color-mix(in srgb,var(--a) 18%,transparent),transparent 58%);
+}
+.disc-card:hover .disc-art{opacity:.9;transform:scale(1.06)}
+[data-theme="light"] .disc-card:hover .disc-art{opacity:1}
+.disc-card .disc-icon{box-shadow:0 10px 26px -14px #000,inset 0 1px 0 rgba(255,255,255,.18);background:rgba(6,10,18,.6);border-color:color-mix(in srgb,var(--a) 46%,transparent)}
+[data-theme="light"] .disc-card .disc-icon{background:rgba(255,255,255,.82)}
+.disc-card .disc-name{text-shadow:0 2px 14px rgba(0,0,0,.55)}
+[data-theme="light"] .disc-card .disc-name{text-shadow:none}
+.disc-card .disc-status{background:rgba(6,10,18,.62);border-color:color-mix(in srgb,var(--a) 38%,transparent);color:#eaf3ff}
+[data-theme="light"] .disc-card .disc-status{background:rgba(255,255,255,.86);color:var(--ink-2)}
+.disc-card .disc-meta .tag{background:rgba(6,10,18,.6);border-color:rgba(255,255,255,.14);color:#cfe0f7}
+.disc-card .disc-meta .tag.is-gold{color:#8ef2ff;border-color:rgba(53,224,255,.42)}
+[data-theme="light"] .disc-card .disc-meta .tag{background:rgba(255,255,255,.86);border-color:var(--line);color:var(--ink-2)}
+[data-theme="light"] .disc-card .disc-meta .tag.is-gold{color:var(--cyan);border-color:rgba(7,120,142,.3)}
+.disc-card .disc-foot{border-top-color:rgba(255,255,255,.14)}
+[data-theme="light"] .disc-card .disc-foot{border-top-color:var(--line)}
+.disc-card .disc-count,.disc-card .disc-cta{color:#dceaff}
+[data-theme="light"] .disc-card .disc-count{color:var(--faint)}
+[data-theme="light"] .disc-card .disc-cta{color:var(--cyan)}
+.disc-card .disc-avatars .avatar{border-color:rgba(6,10,18,.85)}
+
+/* шапка модалки: арт за названием */
+.md-hero.has-art{position:relative;padding:16px;margin:-2px -2px 14px;border-radius:14px;overflow:hidden;isolation:isolate}
+.md-hero .md-art{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:center 32%;opacity:.85}
+.md-hero.has-art::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,rgba(4,7,13,.9) 4%,rgba(4,7,13,.72) 46%,rgba(4,7,13,.32) 100%)}
+.md-hero.has-art .md-title,.md-hero.has-art .md-sub,.md-hero.has-art .md-kicker{text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.md-hero.has-art .md-icon{background:rgba(6,10,18,.62)}
+[data-theme="light"] .md-hero.has-art::after{background:linear-gradient(100deg,rgba(255,255,255,.93) 4%,rgba(255,255,255,.8) 48%,rgba(255,255,255,.42) 100%)}
+[data-theme="light"] .md-hero.has-art .md-title,[data-theme="light"] .md-hero.has-art .md-sub,[data-theme="light"] .md-hero.has-art .md-kicker{text-shadow:none}
+
+/* блок соревнования: приглушённый арт под сеткой/подиумом */
+.comp-shell{background-image:var(--art,none);background-size:cover;background-position:center 30%}
+.comp-shell::after{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg,rgba(4,8,16,.9) 0%,rgba(4,8,16,.95) 30%,rgba(3,6,13,.97) 100%);
+}
+[data-theme="light"] .comp-shell::after{background:linear-gradient(180deg,rgba(255,255,255,.9) 0%,rgba(252,250,245,.95) 30%,rgba(248,245,238,.97) 100%)}
+.comp-head,.comp-brief,#bracket-body,#board-view{position:relative;z-index:1}
+
+/* bye: автопроход не кликается */
+.match-row.is-auto{cursor:default}
+.match-row.is-auto:hover{background:linear-gradient(90deg,rgba(53,224,255,.14),transparent 70%)}
+.match-row.is-auto .match-bye{color:var(--cyan);opacity:.85}
+.match-row.is-empty .match-bye{display:none}
+@media (max-width:760px){
+  .disc-card{min-height:214px}
+  .md-hero.has-art{padding:13px}
+}
+
+/* старый «свет за курсором» (--mx/--my) удалён вместе с тилтом */
+.disc-card::before{display:none}
+/* арт-шапка модалки повторяет скругление карточки */
+.md-hero.has-art{margin:calc(-1 * clamp(8px,1.4vw,14px)) calc(-1 * clamp(4px,.8vw,8px)) 16px;padding:clamp(14px,2.4vw,20px) 54px clamp(14px,2.4vw,20px) clamp(16px,2.6vw,22px);border-radius:18px}
+
+/* участник, который ждёт соперника из предыдущего раунда: не кликается */
+.match-row.is-waiting{cursor:default;color:var(--faint)}
+.match-row.is-waiting:hover{background:none}
+.match-row.is-waiting .match-name{color:var(--muted);font-weight:600}
+.match-row.is-waiting .match-score{display:none}
