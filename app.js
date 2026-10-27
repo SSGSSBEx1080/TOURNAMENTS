@@ -92,10 +92,19 @@
       return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: 'short' }).format(ms);
     } catch (e) { return ''; }
   }
-  function dateLabel(iso) {
-    if (!iso) return '';
-    var p = String(iso).slice(0, 10).split('-');
-    return p[2] + '.' + p[1];
+  function dateLabel(value) {
+    if (!value) return '';
+    var s = String(value).trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[3] + '.' + m[2];
+    m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    if (m) return pad(+m[1]) + '.' + pad(+m[2]);
+    var d = parseStamp(s);
+    if (d) {
+      var shifted = new Date(d.getTime() + 3 * 3600000);
+      return pad(shifted.getUTCDate()) + '.' + pad(shifted.getUTCMonth() + 1);
+    }
+    return '';
   }
   var WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
   function weekday(iso) {
@@ -577,8 +586,10 @@
           m.a = pa ? pa.winner : null;
           m.b = pb ? pb.winner : null;
         }
-        if (m.a && !m.b) m.winner = m.a;
-        else if (!m.a && m.b) m.winner = m.b;
+        /* BYE авто-проходит только в первом раунде: дальше пустой слот —
+           это ещё не сыгранный матч, а не свободная путёвка. */
+        if (r === 0 && m.a && !m.b) m.winner = m.a;
+        else if (r === 0 && !m.a && m.b) m.winner = m.b;
         else if (m.a && m.b) {
           var pick = st.winners[r + '-' + i];
           if (pick === m.a || pick === m.b) m.winner = pick;
@@ -815,7 +826,10 @@
     if (!grid) return;
     var list = filteredRoster();
     grid.innerHTML = list.map(function (p, i) {
-      var ds = (p.disciplines || []).map(discById).filter(Boolean).sort(function (a, b) { return countFor(b.id) - countFor(a.id); });
+      /* на карточке — самые редкие арены бойца: так карточки не дублируют друг друга */
+      var ds = (p.disciplines || []).map(discById).filter(Boolean).sort(function (a, b) {
+        return (countFor(a.id) - countFor(b.id)) || a.name.localeCompare(b.name);
+      });
       var top = ds.slice(0, 3).map(function (d) { return '<span class="tag" style="border-color:' + d.accent + '44">' + d.icon + ' ' + esc(d.name) + ' ' + esc(d.mode) + '</span>'; }).join('');
       var more = ds.length > 3 ? '<span class="tag is-more">+' + (ds.length - 3) + '</span>' : '';
       var duoCount = ds.filter(function (d) { return d.type === 'duo'; }).length;
@@ -840,6 +854,10 @@
     if (word) word.textContent = numberWord(state.players.length);
     var next = $('#roster-next');
     if (next) next.textContent = ordinalWord(state.players.length + 1);
+    var heroWord = $('#hero-player-word');
+    if (heroWord) heroWord.textContent = numberWord(state.players.length);
+    var footPlayers = $('#footer-players');
+    if (footPlayers) footPlayers.textContent = String(state.players.length);
   }
 
   var NUM_WORDS = ['Ноль', 'Один', 'Два', 'Три', 'Четыре', 'Пять', 'Шесть', 'Семь', 'Восемь', 'Девять', 'Десять', 'Одиннадцать', 'Двенадцать'];
@@ -952,7 +970,7 @@
     grid.innerHTML = list.map(function (info) {
       var tags = info.shared.slice(0, 3).map(function (id) {
         var d = discById(id);
-        return d ? '<span class="tag">' + d.icon + ' ' + esc(d.name) + '</span>' : '';
+        return d ? '<span class="tag">' + d.icon + ' ' + esc(d.name) + ' ' + esc(d.mode) + '</span>' : '';
       }).join('');
       return '<article class="pair-card" data-pair-a="' + info.a.id + '" data-pair-b="' + info.b.id + '" tabindex="0" role="button" aria-label="Открыть пару ' + esc(info.a.nick) + ' и ' + esc(info.b.nick) + '">' +
         '<span class="pair-score">' + info.score + '%</span>' +
@@ -1081,7 +1099,7 @@
       var date = entry[0], list = entry[1];
       var dt = new Date(date + 'T12:00:00+03:00');
       return '<div class="day-card' + (date === today ? ' is-today' : '') + '">' +
-        '<div class="day-head"><span class="day-num">' + date.slice(8, 10) + '</span><span class="day-name">' + weekday(date) + ' · ' + date.slice(5, 7) + '</span>' +
+        '<div class="day-head"><span class="day-num">' + date.slice(8, 10) + '</span><span class="day-name">' + weekday(date) + '</span>' +
         '<span class="day-count">' + (list.length ? list.length + ' ' + plural(list.length, ['старт', 'старта', 'стартов']) : 'резерв') + (date === today ? ' · сегодня' : '') + '</span></div>' +
         '<div class="day-list">' + (list.length ? list.map(function (d) {
           return '<button class="slot" type="button" data-disc-id="' + d.id + '" style="--a:' + d.accent + '">' +

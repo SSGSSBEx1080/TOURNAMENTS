@@ -1,7 +1,7 @@
 /* GAMEpiada · service worker v3 (celestial arena)
    Стратегия: навигация — network-first, статика — stale-while-revalidate.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v3.2.0';
+const VERSION = 'gamepiada-v3.3.0';
 const CORE = [
   './',
   './index.html',
