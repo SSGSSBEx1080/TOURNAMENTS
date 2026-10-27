@@ -1457,3 +1457,11 @@ h1,h2,.title-row{text-wrap:balance}
 
 [data-theme="light"] .nav-link.is-active{color:var(--cyan)}
 .nav-link.is-active::after{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+
+/* фоновая вкладка: останавливаем бесконечные анимации */
+body.is-idle .ticker-track,
+body.is-idle .aurora-1,
+body.is-idle .aurora-2,
+body.is-idle .aurora-3,
+body.is-idle .live-pill .dot,
+body.is-idle .eyebrow .pulse{animation-play-state:paused}
