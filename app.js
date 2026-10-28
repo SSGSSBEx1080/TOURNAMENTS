@@ -796,21 +796,30 @@
     host.innerHTML = [1, 2, 3].map(function (place) {
       var e = st[place] ? entrantByKey(d, st[place]) : null;
       var pts = placePoints(d, place);
-      return '<div class="podium-slot place-' + place + (e ? ' is-filled' : '') + '">' +
-        '<div class="podium-rank" aria-hidden="true">' + place + '</div>' +
-        '<div class="podium-meta">' +
-          '<span class="podium-label">' + esc(places[place - 1] || (place + '-е место')) + '</span>' +
-          (e
-            ? '<div class="podium-team">' + e.players.map(function (p) {
-                return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>';
-              }).join('') + '<b>' + esc(e.label) + '</b></div>'
-            : '<div class="podium-empty">место свободно</div>') +
+      return '<div class="podium-slot place-' + place + (e ? ' is-filled' : '') + '" data-place="' + place + '">' +
+        '<span class="podium-beam" aria-hidden="true"></span>' +
+        '<div class="podium-top">' +
+          '<span class="podium-medal" aria-hidden="true"><b>' + place + '</b></span>' +
+          '<span class="podium-label">' + esc(places[place - 1] || (place + '-е место')) + (place === 1 && e ? ' · чемпион' : '') + '</span>' +
           '<span class="podium-points">' + (e ? '+' + fmtPoints(pts) + ' очк.' : '— очк.') + '</span>' +
         '</div>' +
+        (e
+          ? '<div class="podium-team">' + e.players.map(function (pl) {
+              return '<span class="avatar" style="--c1:' + pl.c1 + ';--c2:' + pl.c2 + '"><span>' + esc(pl.initials) + '</span></span>';
+            }).join('') + '<b>' + esc(e.label) + '</b></div>' +
+            (function () {
+              var captions = e.players.map(function (pl) { return pl.name || ''; }).filter(function (n) { return n && n !== e.label; });
+              return captions.length ? '<span class="podium-caption">' + esc(captions.join(' · ')) + '</span>' : '';
+            })()
+          : '<div class="podium-empty"><span>место свободно</span><small>клик по бойцу ниже</small></div>') +
         '<span class="select-wrap"><select class="select podium-select" data-place="' + place + '" aria-label="' + esc(places[place - 1] || ('Место ' + place)) + '">' +
           boardSelectOptions(d, st, place) + '</select></span>' +
+        '<div class="podium-step" aria-hidden="true"><span>' + place + '</span></div>' +
         '</div>';
     }).join('');
+
+    var filledNow = [1, 2, 3].filter(function (p) { return !!st[p]; }).length;
+    host.classList.toggle('is-complete', filledNow === 3);
 
     var list = $('#board-list');
     if (list) {
@@ -829,9 +838,8 @@
 
     var note = $('#board-note');
     if (note) {
-      var filled = [1, 2, 3].filter(function (p) { return !!st[p]; }).length;
       note.innerHTML = '<b>' + esc(c.metric || 'Результат заезда') + '</b> · ' + esc(c.win || '') +
-        '<span>Заполнено мест: ' + filled + ' / 3. Клик по участнику ставит его на ближайшее свободное место, повторный — снимает.</span>';
+        '<span>Подиум: ' + filledNow + ' / 3 места. Клик по бойцу ставит его на ближайшее свободное место, повторный — снимает. Место в подиуме сразу превращается в сезонные очки.</span>';
     }
   }
 
@@ -866,6 +874,7 @@
     var d = discById(state.bracketId);
     if (!d || !isBoard(d)) return;
     var st = boardState(d.id);
+    var wasComplete = [1, 2, 3].every(function (p) { return !!st[p]; });
     var current = [1, 2, 3].filter(function (p) { return st[p] === key; })[0];
     if (current) {
       st[current] = '';
@@ -879,6 +888,11 @@
     }
     saveBoards();
     renderBoard(d);
+    if (!wasComplete && [1, 2, 3].every(function (p) { return !!st[p]; })) {
+      confetti(); chime();
+      var winner = entrantByKey(d, st[1]) || {};
+      toast('Подиум «' + esc(d.name) + ' ' + esc(d.mode) + '» собран: <b>' + esc(winner.label || '—') + '</b> — первое место', '🥇');
+    }
   }
 
   function boardAuto() {

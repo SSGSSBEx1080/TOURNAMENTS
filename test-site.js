@@ -152,9 +152,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('#disc-filters [data-filter="duo"]').click();
   check('duo filter = 3', qa('#disc-grid .disc-card') === 3, qa('#disc-grid .disc-card'));
   $('#disc-filters [data-filter="board"]').click();
-  check('board filter = 4', qa('#disc-grid .disc-card') === 4, qa('#disc-grid .disc-card'));
+  check('board filter = 5', qa('#disc-grid .disc-card') === 5, qa('#disc-grid .disc-card'));
+  check('чип «Заезды» = 5', $('[data-filter-count="board"]').textContent === '5', $('[data-filter-count="board"]').textContent);
   $('#disc-filters [data-filter="bracket"]').click();
-  check('bracket filter = 13', qa('#disc-grid .disc-card') === 13, qa('#disc-grid .disc-card'));
+  check('bracket filter = 12', qa('#disc-grid .disc-card') === 12, qa('#disc-grid .disc-card'));
+  check('чип «Круговая» = 12', $('[data-filter-count="bracket"]').textContent === '12', $('[data-filter-count="bracket"]').textContent);
   $('#disc-filters [data-filter="all"]').click();
   $('#disc-search').value = 'шахматы';
   $('#disc-search').dispatchEvent(new window.Event('input', { bubbles: true }));
@@ -269,15 +271,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       broken.push(id + ': ' + n + ' уч / ' + tours + ' туров / ' + matches + ' матчей / ' + unique + ' пар');
     }
   });
-  check('все круговые: N−1 туров, N(N−1)/2 матчей, без повторов', broken.length === 0, broken.join('; ') || leagueChecked + ' круговых проверено');
+  check('все круговые: N−1 туров, N(N−1)/2 матчей, без повторов', broken.length === 0 && leagueChecked === 12, broken.join('; ') || leagueChecked + ' круговых проверено');
 
   // ── заезд: подиум 1 / 2 / 3 вместо круговой ────────────────────────
-  // ── заезд: подиум 1 / 2 / 3 вместо сетки ───────────────────────────
   $('#bracket-select').value = 'tm';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
   check('board title', /Заезд.*Trackmania/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
   check('board mode hides league', $('#bracket-body').hidden && !$('#board-view').hidden, 'board only');
   check('podium slots = 3', qa('#board-view .podium-slot') === 3, qa('#board-view .podium-slot'));
+  check('podium ступени = 3', qa('#board-podium .podium-step') === 3, qa('#board-podium .podium-step'));
+  check('podium медали = 3', qa('#board-podium .podium-medal') === 3, qa('#board-podium .podium-medal'));
+  check('podium порядок 2–1–3', $$('#board-podium .podium-slot').map((el) => el.dataset.place).join('') === '123', $$('#board-podium .podium-slot').map((el) => el.dataset.place).join(''));
   check('podium points', /3 \/ 2 \/ 1/.test($('#comp-brief').textContent), 'ok');
   check('board brief from regulation', /сумма времени|5 трасс/i.test($('#comp-brief').textContent), 'ok');
   check('board shell has art', /assets\/games\/tm\.jpg/.test($('#comp-shell').getAttribute('style') || ''), ($('#comp-shell').getAttribute('style') || '').slice(0, 60));
@@ -286,12 +290,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('board list = entrants', boardRows >= 3, boardRows);
   $('[data-action="board-auto"]').click();
   check('board auto fills 3', qa('#board-view .podium-slot.is-filled') === 3, qa('#board-view .podium-slot.is-filled'));
+  check('podium собран', $('#board-podium').classList.contains('is-complete'), 'is-complete');
+  check('чемпион подписан', /чемпион/.test($('#board-podium .place-1').textContent), $('#board-podium .place-1').textContent.replace(/\s+/g, ' ').slice(0, 60));
   check('board points awarded', /\+3 очк/.test($('#board-podium').textContent) && /\+1 очк/.test($('#board-podium').textContent), 'ok');
   const placedRow = $$('#board-list .board-row').find((r) => (r.querySelector('.br-rank').textContent || '').indexOf('#') === 0);
   if (placedRow) placedRow.click();
   check('board pick clears place', qa('#board-view .podium-slot.is-filled') === 2, qa('#board-view .podium-slot.is-filled'));
   $('[data-action="board-reset"]').click();
   check('board reset empties podium', qa('#board-view .podium-slot.is-filled') === 0, qa('#board-view .podium-slot.is-filled'));
+  // ── Double Dealers тоже подиум ─────────────────────────────────────
+  $('#bracket-select').value = 'dd';
+  $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('dd: подиум вместо круговой', /Заезд.*Double Dealers/.test($('#bracket-title').textContent) && !$('#board-view').hidden, $('#bracket-title').textContent);
+  check('dd: три места', qa('#board-view .podium-slot') === 3 && qa('#board-podium .podium-step') === 3, qa('#board-view .podium-slot') + ' / ' + qa('#board-podium .podium-step'));
+  check('dd: бриф про места', /места 1–3/i.test($('#comp-brief').textContent) && /1–3/.test($('#comp-brief').textContent), $('#comp-brief').textContent.replace(/\s+/g, ' ').slice(0, 80));
+  check('dd: карточка = заезд', $$('.disc-card[data-disc-id="dd"] .tag').map((el) => el.textContent).join(' ').indexOf('заезд') >= 0, $$('.disc-card[data-disc-id="dd"] .tag').map((el) => el.textContent).join(' / '));
+  check('dd: в списке участников есть бойцы', qa('#board-list .board-row') >= 3, qa('#board-list .board-row'));
+
   $('#bracket-select').value = 'dota11';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
   check('back to league mode', !$('#bracket-body').hidden && $('#board-view').hidden && qa('#bracket-board .tour-card') > 0, qa('#bracket-board .tour-card') + ' туров');
