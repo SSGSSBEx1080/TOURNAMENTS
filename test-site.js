@@ -443,9 +443,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.8\.2$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.9\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.8\.2/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.2/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.9\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.9\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -490,7 +490,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.GP.cloud.setToken('test-token');
   window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 10, updatedBy: 'boss', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: {} } }, boards: {}, roster: {} });
   check('облако: админ видит общий режим', window.GP.cloud.status.mode === 'live' && !document.body.classList.contains('is-readonly'), window.GP.cloud.status.mode);
-  check('облако: чип показывает админа', /общие результаты/.test($('#cloud-chip').textContent), $('#cloud-chip').textContent.trim());
+  check('облако: полоса показывает админа', /Ты админ/.test($('#cloud-chip').textContent) && /сохранено|сохраняю/.test($('#cloud-chip').textContent), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 70));
   const winBefore = qa('#bracket-board .rr-row.is-winner');
   $('#bracket-board .rr-row[data-entrant]').click();
   check('облако: админ ставит результат', qa('#bracket-board .rr-row.is-winner') === winBefore + 1, winBefore + ' → ' + qa('#bracket-board .rr-row.is-winner'));
@@ -518,6 +518,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('админка: инструкция по токену', /personal-access-tokens/.test($('#modal-body').innerHTML) && qa('#modal-body .admin-help li') === 6, qa('#modal-body .admin-help li'));
   window.GP.cloud.addAdmin('friend-login');
   check('админка: назначение админа', window.GP.cloud.admins().indexOf('friend-login') >= 0, window.GP.cloud.admins().join(','));
+
+  // полоса режима: зритель видит «войти», админ — «можно менять»
+  window.GP.cloud.setToken('');
+  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 20, updatedAt: new Date().toISOString(), admins: ['boss'], log: [{ at: new Date().toISOString(), by: 'boss', text: 'включил общий режим' }], brackets: {}, boards: {}, roster: {} });
+  check('полоса: зрителю предлагают войти', /Только чтение/.test($('#cloud-chip').textContent) && !!$('[data-action="admin-login"]'), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
+  // простой вход (пока зритель)
+  $('[data-action="admin-login"]').click();
+  check('вход: одно поле и одна кнопка', !!$('#cloud-token') && !!$('[data-action="cloud-connect"]') && /Только ты меняешь/.test($('#modal-body').textContent), '');
+  $('[data-action="close-modal"]').click();
+
+  // шпаргалка (пока зритель)
+  $('[data-action="how-to-edit"]').click();
+  check('шпаргалка: 5 шагов', qa('#modal-body .howto-step') === 5 && /Как вносить результаты/.test($('#modal-body').textContent), qa('#modal-body .howto-step'));
+  $('[data-action="close-modal"]').click();
+
+  window.GP.cloud.setToken('test-token');
+  check('полоса: токен сразу включает админа', /Ты админ/.test($('#cloud-chip').textContent) && document.body.classList.contains('is-admin'), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
+
+  $('[data-action="cloud-panel"]').click();
+  check('админка: блок «Что делать» с быстрыми кнопками', qa('#modal-body .admin-quick button') === 3, qa('#modal-body .admin-quick button'));
+  $("#modal-close").click();
   window.GP.cloud.status.expires = new Date(Date.now() + 2 * 86400000).toISOString();
   $('[data-action="cloud-panel"]').click();
   check('админка: предупреждает о скором истечении токена', /скоро закончится/.test($('#modal-body').textContent) && !!$('#modal-body .admin-exp'), ($('#modal-body .admin-exp') || {}).textContent || 'нет');

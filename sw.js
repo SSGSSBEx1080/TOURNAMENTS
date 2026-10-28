@@ -1,8 +1,8 @@
-/* GAMEpiada · service worker v4.8 (общие результаты и админка)
+/* GAMEpiada · service worker v4.9 (понятная админка)
    Стратегия: навигация и JS/CSS — network-first (обновления приезжают сразу),
    картинки — cache-first, офлайн — из кеша.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.8.2';
+const VERSION = 'gamepiada-v4.9.0';
 const CORE = [
   './',
   './index.html',

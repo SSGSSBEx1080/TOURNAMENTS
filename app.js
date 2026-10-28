@@ -388,6 +388,7 @@
     cfg: { owner: 'SSGSSBEx1080', repo: 'TOURNAMENTS', branch: 'main', path: 'data/live-state.json', token: '', login: '' },
     status: {
       mode: 'local',      /* local | live | readonly */
+      shared: 'setup',    /* режим, объявленный в файле: setup | live */
       rev: 0,
       updatedAt: '',
       updatedBy: '',
@@ -438,8 +439,15 @@
     try { localStorage.setItem(CLOUD.cfgKey, JSON.stringify(CLOUD.cfg)); } catch (e) { /* quota */ }
   }
   function cloudHasToken() { return !!CLOUD.cfg.token; }
-  function cloudIsAdmin() { return cloudHasToken() && CLOUD.status.mode === 'live'; }
-  function cloudIsReadonly() { return CLOUD.status.mode === 'readonly'; }
+  function cloudIsAdmin() { return cloudHasToken() && CLOUD.status.shared === 'live'; }
+  function cloudIsReadonly() { return !cloudHasToken() && CLOUD.status.shared === 'live'; }
+  /* Пересчитать локальный режим по файлу состояния и наличию токена. */
+  function cloudSyncMode() {
+    CLOUD.status.mode = CLOUD.status.shared === 'live'
+      ? (cloudHasToken() ? 'live' : 'readonly')
+      : 'local';
+    return CLOUD.status.mode;
+  }
   function cloudReady() { return typeof fetch === 'function'; }
 
   function cloudRepo() {
@@ -519,11 +527,8 @@
     if (remote.boards && typeof remote.boards === 'object') state.boards = remote.boards;
     if (remote.roster && typeof remote.roster === 'object') state.rosterEdits = sanitizeRoster(remote.roster);
     applyRosterEdits();
-    if (remote.mode === 'live') {
-      CLOUD.status.mode = cloudHasToken() ? 'live' : 'readonly';
-    } else {
-      CLOUD.status.mode = 'local';
-    }
+    CLOUD.status.shared = remote.mode === 'live' ? 'live' : 'setup';
+    cloudSyncMode();
     CLOUD.status.checkedAt = Date.now();
     CLOUD.status.error = '';
     CLOUD.applying = false;
@@ -622,7 +627,8 @@
         if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120)); });
         /* локально сразу приводим состояние к опубликованному */
         CLOUD.status.rev = (CLOUD.status.rev || 0) + 1;
-        CLOUD.status.mode = 'live';
+        CLOUD.status.shared = 'live';
+        cloudSyncMode();
         CLOUD.status.updatedAt = new Date().toISOString();
         CLOUD.status.updatedBy = CLOUD.cfg.login || 'admin';
         CLOUD.status.error = '';
@@ -694,7 +700,8 @@
     return cloudVerifyToken().then(function (u) {
       if (!u.canWrite) throw new Error('у токена нет права contents:write на этот репозиторий');
       if (CLOUD.admins.indexOf(u.login) < 0) CLOUD.admins.unshift(u.login);
-      CLOUD.status.mode = 'live';
+      CLOUD.status.shared = 'live';
+      cloudSyncMode();
       cloudLog('включил общий режим');
       return cloudPush('включил общий режим', false).then(function (ok) {
         renderAll(); renderCloudUI();
@@ -713,8 +720,9 @@
     CLOUD.cfg.token = '';
     CLOUD.cfg.login = '';
     cloudSaveCfg();
-    CLOUD.status.mode = 'local';
+    cloudSyncMode();
     CLOUD.status.error = '';
+    renderAll();
     renderCloudUI();
     toast('Токен убран из этого браузера. Общие результаты остались на сайте.', '🔓');
   }
@@ -735,18 +743,48 @@
   }
 
   /* ── админка: вход по токену, админы, журнал, бэкап ────────────────── */
+  function cloudSavedText() {
+    if (cloudIsAdmin() && CLOUD.status.syncing) return 'сохраняю…';
+    if (cloudIsAdmin() && CLOUD.status.dirty) return 'сохраняю…';
+    if (CLOUD.status.updatedAt) return 'сохранено ' + clockShort(CLOUD.status.updatedAt);
+    return 'ещё нечего сохранять';
+  }
+
   function cloudBadgeHtml() {
-    var cls = cloudIsAdmin() ? 'is-live' : (cloudIsReadonly() ? 'is-read' : 'is-local');
-    var icon = cloudIsAdmin() ? '🌍' : (cloudIsReadonly() ? '👁' : '💾');
-    var label = cloudIsAdmin() ? 'общие результаты' : (cloudIsReadonly() ? 'только чтение' : 'локально');
-    return '<button class="cloud-chip ' + cls + '" type="button" data-action="cloud-panel" title="' + esc(cloudStatusText()) + '">' +
-      '<span aria-hidden="true">' + icon + '</span><span>' + label + '</span>' +
-      (cloudIsAdmin() ? '<b>' + esc(CLOUD.cfg.login || '') + '</b>' : '') +
-      '</button>';
+    if (cloudIsAdmin()) {
+      return '<div class="cloud-bar is-live">' +
+        '<span class="cb-icon" aria-hidden="true">🟢</span>' +
+        '<div class="cb-text"><b>Ты админ — можно менять</b>' +
+          '<span>Всё сохраняется само и сразу видно всем · ' + esc(cloudSavedText()) + '</span></div>' +
+        '<div class="cb-actions">' +
+          '<button class="btn btn-primary btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как вносить</span></button>' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-panel"><span aria-hidden="true">⚙️</span><span>Настройки</span></button>' +
+        '</div></div>';
+    }
+    if (cloudIsReadonly()) {
+      return '<div class="cloud-bar is-read">' +
+        '<span class="cb-icon" aria-hidden="true">🔒</span>' +
+        '<div class="cb-text"><b>Только чтение</b>' +
+          '<span>Результаты вносит админ · ' + esc(CLOUD.status.updatedAt ? 'обновлено ' + clockShort(CLOUD.status.updatedAt) : 'пока пусто') + '</span></div>' +
+        '<div class="cb-actions">' +
+          '<button class="btn btn-primary btn-sm" type="button" data-action="admin-login"><span aria-hidden="true">🔑</span><span>Я админ — войти</span></button>' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как это работает</span></button>' +
+        '</div></div>';
+    }
+    /* локальный режим: не мозолим глаза зрителям, показываем только владельцу */
+    if (!cloudHasToken()) return '';
+    return '<div class="cloud-bar is-local">' +
+      '<span class="cb-icon" aria-hidden="true">💾</span>' +
+      '<div class="cb-text"><b>Пока только у тебя</b>' +
+        '<span>Правки не видны другим. Включи общий режим — и их увидят все.</span></div>' +
+      '<div class="cb-actions">' +
+        '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-go-live"><span aria-hidden="true">🌍</span><span>Включить общий режим</span></button>' +
+      '</div></div>';
   }
   function renderCloudUI() {
     var chip = $('#cloud-chip');
     if (chip) chip.innerHTML = cloudBadgeHtml();
+    document.body.classList.toggle('is-admin', cloudIsAdmin());
     var foot = $('#cloud-foot');
     if (foot) foot.textContent = cloudStatusText();
     var badge = $('#cloud-mode');
@@ -776,6 +814,69 @@
     }).join('') + '</div>';
   }
 
+  /* Выносим инструкцию по токену в отдельную функцию: нужна и в админке,
+     и в простом экране входа. */
+  function adminHelpHtml() {
+    return '<details class="admin-help"><summary>Где взять токен — 6 шагов</summary><ol>' +
+        '<li>Открой <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> (нужен вход в GitHub).</li>' +
+        '<li><b>Token name</b> — любой, например <b>gamepiada-admin</b>.</li>' +
+        '<li><b>Expiration</b> — поставь «Custom» и дату подольше (например, через год).</li>' +
+        '<li><b>Repository access</b> → <b>Only select repositories</b> → выбери <b>' + esc(CLOUD.cfg.repo) + '</b>.</li>' +
+        '<li><b>Permissions</b> → <b>Repository permissions</b> → <b>Contents</b> → <b>Read and write</b>. Больше ничего не нужно.</li>' +
+        '<li>Нажми <b>Generate token</b> и скопируй строку (начинается с <b>github_pat_</b>). Вставь её в поле выше и нажми Enter.</li>' +
+      '</ol><p>Токен = ключ админа. Чтобы назначить друга: добавь его в <b>Settings → Collaborators</b> репозитория (доступ Write), пусть он создаст свой такой же токен и вставит в админке на своём устройстве.</p></details>';
+  }
+
+  /* Простой вход: одно поле, одна кнопка. Без таблиц и настроек. */
+  function adminLoginModal() {
+    var html = '<div class="md-hero" style="--a:#f3cd7c;--b:#7fe9ff">' +
+        '<span class="md-icon" aria-hidden="true">🔑</span>' +
+        '<div><span class="md-kicker">вход для админа</span>' +
+        '<h3 class="md-title">Только ты меняешь результаты</h3>' +
+        '<div class="md-sub">Вставь свой GitHub-токен один раз — этот браузер запомнит. Дальше сайт будет пускать тебя в режим правки, а остальные увидят только чтение.</div></div></div>' +
+      '<label class="admin-field"><span>Токен администратора</span>' +
+        '<input type="password" id="cloud-token" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>' +
+      '<div class="admin-actions">' +
+        '<button class="btn btn-primary" type="button" data-action="cloud-connect">Подключиться</button>' +
+      '</div>' +
+      '<div class="admin-hint">Токен живёт только в этом браузере и уходит исключительно на <b>api.github.com</b>. В код сайта он не попадает — посетители его не видят.</div>' +
+      (CLOUD.status.error ? '<div class="admin-error">' + esc(CLOUD.status.error) + '</div>' : '') +
+      adminHelpHtml() +
+      '<div class="md-actions"><button class="btn btn-ghost" type="button" data-action="close-modal">Отмена</button></div>';
+    openModal(html);
+    window.setTimeout(function () {
+      var f = $('#cloud-token');
+      if (f) f.focus();
+    }, 60);
+  }
+
+  /* Шпаргалка: что и куда нажимать. */
+  function howToEditModal() {
+    var steps = [
+      { n: '1', icon: '🎮', title: 'Выбери дисциплину', text: 'Список «Круговая · Dota 2 · 1×1» находится вверху блока «02 Турниры». Выбери нужную — сетка и таблица переключатся.' },
+      { n: '2', icon: '⚔️', title: 'Круговая: нажми на победителя', text: 'В карточке матча два ника. Клик по нику = он выиграл этот матч (счёт 1:0, ник подсветится, чип станет оранжевым). Ошибся — нажми ещё раз, результат снимется.' },
+      { n: '3', icon: '🏆', title: 'Заезды: собери подиум', text: 'У заездов (Double Dealers, Geometry Dash, Minecraft Duo, Fall Guys, Trackmania) вместо сетки подиум. Жми на бойцов в списке «Участники арены» — они встают на места по порядку: 1-е, 2-е, 3-е. Повторный клик снимает.' },
+      { n: '4', icon: '👥', title: 'Состав: чипы над сеткой', text: 'Панель «Кто играет в этой сетке» — клик по бойцу добавляет или убирает его из этой дисциплины. Крутится сразу везде: в сетке, таблице и матрице.' },
+      { n: '5', icon: '💾', title: 'Сохранять не надо', text: 'Всё уходит в облако само примерно через секунду — в зелёной полосе сверху видно «сохранено 19:42». Другие увидят изменения в течение 25 секунд.' }
+    ];
+    var html = '<div class="md-hero" style="--a:#7fe9ff;--b:#b18bff">' +
+        '<span class="md-icon" aria-hidden="true">?</span>' +
+        '<div><span class="md-kicker">шпаргалка</span>' +
+        '<h3 class="md-title">Как вносить результаты</h3>' +
+        '<div class="md-sub">Пять шагов, ничего сложного. Все изменения сохраняются автоматически.</div></div></div>' +
+      '<div class="howto">' + steps.map(function (s) {
+        return '<div class="howto-step"><span class="hs-num">' + s.n + '</span>' +
+          '<div class="hs-body"><b>' + s.icon + ' ' + esc(s.title) + '</b><span>' + esc(s.text) + '</span></div></div>';
+      }).join('') + '</div>' +
+      '<div class="md-actions">' +
+        (cloudIsAdmin()
+          ? '<button class="btn btn-primary" type="button" data-action="close-modal">Понятно, поехали</button>'
+          : '<button class="btn btn-primary" type="button" data-action="admin-login">Войти как админ</button>' +
+            '<button class="btn btn-ghost" type="button" data-action="close-modal">Закрыть</button>') +
+      '</div>';
+    openModal(html);
+  }
+
   function adminModal() {
     var admins = CLOUD.admins.length ? CLOUD.admins.map(function (a) {
       return '<span class="admin-tag' + (a === CLOUD.cfg.login ? ' is-me' : '') + '">' + esc(a) +
@@ -791,14 +892,7 @@
       : '<label class="admin-field"><span>Токен администратора (GitHub)</span>' +
         '<input type="password" id="cloud-token" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>' +
         '<div class="admin-hint">Токен хранится только в этом браузере и уходит исключительно на <b>api.github.com</b>. В код сайта он не попадает — посетители его не видят.</div>';
-    tokenLine += '<details class="admin-help"><summary>Где взять токен — 6 шагов</summary><ol>' +
-          '<li>Открой <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> (нужен вход в GitHub).</li>' +
-          '<li><b>Token name</b> — любой, например <b>gamepiada-admin</b>.</li>' +
-          '<li><b>Expiration</b> — поставь «Custom» и дату подольше (например, через год).</li>' +
-          '<li><b>Repository access</b> → <b>Only select repositories</b> → выбери <b>' + esc(CLOUD.cfg.repo) + '</b>.</li>' +
-          '<li><b>Permissions</b> → <b>Repository permissions</b> → <b>Contents</b> → <b>Read and write</b>. Больше ничего не нужно.</li>' +
-      '<li>Нажми <b>Generate token</b> и скопируй строку (начинается с <b>github_pat_</b>). Вставь её в поле выше и нажми Enter.</li>' +
-      '</ol><p>Токен = ключ админа. Чтобы назначить друга: добавь его в <b>Settings → Collaborators</b> репозитория (доступ Write), пусть он создаст свой такой же токен и вставит в админке на своём устройстве.</p></details>';
+    tokenLine += adminHelpHtml();
 
     var html = '<div class="md-hero" style="--a:#7fe9ff;--b:#b18bff">' +
         '<span class="md-icon" aria-hidden="true">🛡️</span>' +
@@ -806,13 +900,19 @@
         '<h3 class="md-title">Кто вносит результаты</h3>' +
         '<div class="md-sub">Общий режим: изменения сохраняются в файл на сайте и сразу видны всем. Остальные смотрят только чтение.</div></div></div>' +
       '<div class="admin-status ' + (cloudIsAdmin() ? 'is-live' : (cloudIsReadonly() ? 'is-read' : 'is-local')) + '" id="cloud-mode">' + esc(cloudStatusText()) + '</div>' +
-      '<div class="admin-block"><h4>Доступ</h4>' + tokenLine +
+      '<div class="admin-block"><h4>Что делать</h4>' +
+        '<div class="admin-quick">' +
+          '<button class="btn btn-primary btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как вносить результаты</span></button>' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-sync"><span aria-hidden="true">⟳</span><span>Синхронизировать</span></button>' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-backup"><span aria-hidden="true">💾</span><span>Скачать бэкап</span></button>' +
+        '</div>' +
+        '<div class="admin-hint">Менять результаты можно прямо в блоке «02 Турниры»: клик по бойцу в матче — он победил. Здесь — только доступ, журнал и бэкапы.</div>' +
+      '</div>' +
+      '<div class="admin-block"><h4>Вход</h4>' + tokenLine +
         '<div class="admin-actions">' +
-          (cloudHasToken() ? '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-sync">Синхронизировать</button>' : '') +
           (cloudHasToken() ? '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-verify">Проверить токен</button>' : '') +
           (cloudHasToken() && !cloudIsAdmin() ? '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-go-live">Включить общий режим</button>' : '') +
           '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-pull">Прочитать с сервера</button>' +
-          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-backup">Скачать бэкап</button>' +
           '<label class="btn btn-ghost btn-sm admin-upload">Загрузить бэкап<input type="file" id="cloud-import" accept="application/json,.json" hidden></label>' +
         '</div>' +
         (cloudHasToken() && !cloudIsAdmin() ? '<div class="admin-warn">Изменения пока сохраняются только в этом браузере. Нажми «Включить общий режим», чтобы их увидели все.</div>' : '') +
@@ -2784,6 +2884,36 @@
         if (state.matrixEdit) toast('Правка состава: клик по точке добавляет или убирает бойца из сетки', '👥');
         break;
       case 'cloud-panel': adminModal(); break;
+      case 'admin-login': adminLoginModal(); break;
+      case 'how-to-edit': howToEditModal(); break;
+      case 'cloud-connect': {
+        var el2 = $('#cloud-token');
+        var val = el2 ? el2.value.trim() : '';
+        if (!val) { toast('Вставь токен в поле выше', '🔑'); break; }
+        CLOUD.cfg.token = val;
+        cloudSaveCfg();
+        cloudVerifyToken().then(function (u) {
+          if (!u.canWrite) throw new Error('у токена нет права Contents: read and write');
+          if (CLOUD.admins.indexOf(u.login) < 0) CLOUD.admins.unshift(u.login);
+          CLOUD.status.shared = 'live';
+          cloudSyncMode();
+          CLOUD.status.error = '';
+          return cloudPush('вход админа', true).then(function (ok) {
+            if (!ok) throw new Error(CLOUD.status.error || 'не удалось сохранить');
+            renderAll();
+            renderCloudUI();
+            closeModal();
+            toast('Готово! Теперь ты можешь менять результаты — изменения увидят все', '🟢');
+            window.setTimeout(function () { howToEditModal(); }, 500);
+          });
+        }).catch(function (e) {
+          CLOUD.status.error = String(e && e.message || e);
+          renderCloudUI();
+          adminLoginModal();
+          toast('Не получилось: ' + esc(CLOUD.status.error), '⚠️');
+        });
+        break;
+      }
       case 'cloud-go-live': cloudGoLive(); break;
       case 'cloud-sync': cloudPush('ручная синхронизация', false); break;
       case 'cloud-pull':
@@ -3026,6 +3156,8 @@
     if (e.key !== 'Enter') return;
     if (e.target && e.target.id === 'cloud-token') {
       e.preventDefault();
+      var connect = $('[data-action="cloud-connect"]');
+      if (connect) { connect.click(); return; }
       CLOUD.cfg.token = e.target.value.trim();
       cloudSaveCfg();
       cloudVerifyToken().then(function (u) {
@@ -3199,7 +3331,7 @@
         cfg: CLOUD.cfg, status: CLOUD.status,
         exportState: cloudExport, apply: cloudApply, merge: cloudMerge,
         pull: cloudPull, push: cloudPush, verify: cloudVerifyToken, goLive: cloudGoLive,
-        setToken: function (t) { CLOUD.cfg.token = t || ''; cloudSaveCfg(); renderCloudUI(); },
+        setToken: function (t) { CLOUD.cfg.token = t || ''; cloudSaveCfg(); cloudSyncMode(); renderCloudUI(); },
         setMode: function (m) { CLOUD.status.mode = m; renderCloudUI(); },
         admins: function () { return CLOUD.admins.slice(); },
         addAdmin: cloudAddAdmin, log: function () { return CLOUD.log.slice(); }
