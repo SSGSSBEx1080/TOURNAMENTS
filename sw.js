@@ -1,7 +1,8 @@
-/* GAMEpiada · service worker v4.6 (esports arena · слоты вместо дат, круги строками, правка состава)
-   Стратегия: навигация — network-first, статика — stale-while-revalidate.
+/* GAMEpiada · service worker v4.7 (esports arena · сеть в приоритете, правка состава)
+   Стратегия: навигация и JS/CSS — network-first (обновления приезжают сразу),
+   картинки — cache-first, офлайн — из кеша.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.6.0';
+const VERSION = 'gamepiada-v4.7.0';
 const CORE = [
   './',
   './index.html',
@@ -53,18 +54,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  /* Картинки и шрифты — cache-first: экономим трафик и держим офлайн. */
+  if (/\.(png|jpe?g|webp|svg|gif|ico|woff2?|ttf)$/i.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request, { ignoreSearch: true }).then((cached) => cached || fetch(request).then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
+        }
+        return response;
+      }).catch(() => cached))
+    );
+    return;
+  }
+
+  /* JS/CSS/манифест — network-first: новая версия сайта видна сразу,
+     кеш остаётся только как офлайн-фолбэк. */
   event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
+        }
+        return response;
+      })
+      .catch(() => caches.match(request, { ignoreSearch: true }).then((hit) => hit || caches.match('./index.html')))
   );
 });

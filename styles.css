@@ -1703,3 +1703,44 @@ body.is-idle .eyebrow .pulse{animation-play-state:paused}
   .roster-tools .search-field{max-width:none}
   .roster-bar{padding:9px 12px;font-size:.62rem}
 }
+
+/* ═══════════ 30 · состав сетки всегда на виду ═══════════ */
+.roster-inline{
+  margin:0 0 16px;padding:12px 14px;border-radius:14px;
+  border:1px solid var(--line);background:rgba(4,8,16,.42);
+}
+[data-theme="light"] .roster-inline{background:rgba(255,255,255,.66)}
+.ri-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.ri-title{display:grid;gap:2px;min-width:0}
+.ri-title b{font-family:var(--font-d);font-size:.82rem;letter-spacing:-.01em}
+.ri-title span{font-size:.64rem;color:var(--faint);font-weight:600}
+.ri-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ri-tools .btn-sm{padding:.42rem .6rem;font-size:.66rem}
+.ri-edited{font-size:.62rem;font-weight:800;color:var(--gold);display:inline-flex;align-items:center;gap:5px}
+.ri-link{
+  padding:0;border:0;background:none;color:var(--cyan);font:inherit;font-size:.62rem;font-weight:800;
+  text-decoration:underline;text-underline-offset:2px;cursor:pointer;
+}
+.ri-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ri-chip{
+  display:inline-flex;align-items:center;gap:6px;max-width:100%;
+  padding:4px 8px 4px 4px;border-radius:999px;border:1px solid var(--line);
+  background:var(--glass-hi);color:var(--muted);font:inherit;font-size:.7rem;font-weight:700;
+  cursor:pointer;transition:border-color .18s,background .18s,color .18s,transform .12s;
+}
+.ri-chip:hover{transform:translateY(-1px);border-color:var(--line-2);color:var(--ink-2)}
+.ri-chip:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.ri-chip .avatar{width:22px;height:22px;font-size:.5rem;opacity:.55}
+.ri-nick{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.ri-mark{font-style:normal;font-size:.66rem;font-weight:900;color:var(--faint);line-height:1}
+.ri-chip.is-on{border-color:rgba(53,224,255,.38);background:rgba(53,224,255,.09);color:var(--ink)}
+.ri-chip.is-on .avatar{opacity:1}
+.ri-chip.is-on .ri-mark{color:var(--cyan)}
+.ri-chip:not(.is-on){opacity:.72;border-style:dashed}
+.ri-chip:not(.is-on):hover{opacity:1;border-style:solid}
+[data-theme="light"] .ri-chip.is-on{border-color:rgba(20,120,150,.32);background:rgba(53,224,255,.14)}
+@media (max-width:760px){
+  .roster-inline{padding:10px 11px;margin-bottom:12px}
+  .ri-nick{max-width:104px}
+  .ri-head{gap:8px}
+}

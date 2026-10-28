@@ -417,6 +417,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('правка перед синком', Object.keys(window.GP.state.rosterEdits).length > 0, JSON.stringify(window.GP.state.rosterEdits));
   $('[data-action="matrix-edit"]').click();
 
+  // ── состав сетки всегда на виду (инлайн-чипы) ──────────────────────
+  const chipAll = qa('#roster-inline .ri-chip');
+  const chipOn = qa('#roster-inline .ri-chip.is-on');
+  check('инлайн-состав: чип на каждого бойца', chipAll === qa('#roster-grid .player-card'), chipAll + ' чипов');
+  check('инлайн-состав: активных = участников', chipOn === qa('#league-table tbody tr'), chipOn + ' / ' + qa('#league-table tbody tr'));
+  check('инлайн-состав: заголовок', /Кто играет в этой сетке/.test($('#roster-inline').textContent), $('.ri-title', $('#roster-inline')).textContent.replace(/\s+/g, ' '));
+  check('инлайн-состав: дисциплина синхронна', $$('#roster-inline .ri-chip').every((c) => c.getAttribute('data-roster-disc') === window.GP.state.bracketId), window.GP.state.bracketId);
+  const chipOff = $('#roster-inline .ri-chip:not(.is-on)');
+  const chipOffNick = chipOff.querySelector('.ri-nick').textContent;
+  chipOff.click();
+  check('инлайн-состав: клик добавляет', qa('#roster-inline .ri-chip.is-on') === chipOn + 1 && qa('#league-table tbody tr') === chipOn + 1, chipOffNick + ' → ' + qa('#roster-inline .ri-chip.is-on'));
+  check('инлайн-состав: отметка о правке', !!$('.ri-edited'), $('.ri-edited') && $('.ri-edited').textContent.replace(/\s+/g, ' '));
+  $('[data-action="roster-reset-disc"]').click();
+  const dotaLeft = Object.keys(window.GP.state.rosterEdits).filter(function (pid) {
+    const ed = window.GP.state.rosterEdits[pid] || {};
+    return (ed.add || []).indexOf('dota11') >= 0 || (ed.drop || []).indexOf('dota11') >= 0;
+  });
+  check('инлайн-состав: сброс сетки', qa('#roster-inline .ri-chip.is-on') === chipOn && !$('.ri-edited') && dotaLeft.length === 0, qa('#roster-inline .ri-chip.is-on') + ' · правок по dota11: ' + dotaLeft.length);
+  const chipSel = $('#bracket-select');
+  chipSel.value = 'chess';
+  chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('инлайн-состав: следует за дисциплиной', $$('#roster-inline .ri-chip').every((c) => c.getAttribute('data-roster-disc') === 'chess') && $('.ri-title b').textContent === 'Кто играет в этой сетке', $('#roster-inline .ri-chip').getAttribute('data-roster-disc'));
+  chipSel.value = 'dota11';
+  chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+  // ── версия и принудительное обновление ─────────────────────────────
+  check('версия в подвале', /^v4\.7\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
+  check('ассеты с версией', /styles\.css\?v=4\.7\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.7\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+
   // ── theme ──────────────────────────────────────────────────────────
   const themeBefore = document.documentElement.getAttribute('data-theme');
   $('#theme-toggle').click();
