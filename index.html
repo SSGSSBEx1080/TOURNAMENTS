@@ -327,7 +327,7 @@
               <button class="btn btn-ghost btn-sm" type="button" data-action="auto-bracket" data-label='<span aria-hidden="true">⚡</span><span>Автопрогноз</span>'><span aria-hidden="true">⚡</span><span>Автопрогноз</span></button>
               <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Пересобрать туры"><span aria-hidden="true">🔀</span><span>Туры</span></button>
               <button class="btn btn-glass btn-sm" type="button" data-action="reset-bracket" title="Сбросить результаты"><span aria-hidden="true">↺</span><span>Сброс</span></button>
-              <div class="bracket-progress"><span class="bp-track"><i class="bp-fill" id="bracket-progress-fill" style="--w:0%"></i></span><span id="bracket-progress">0 / 15</span></div>
+              <div class="bracket-progress"><span class="bp-track"><i class="bp-fill" id="bracket-progress-fill" style="--w:0%"></i></span><span id="bracket-progress" aria-live="polite">0 / 15</span></div>
             </div>
             <div class="comp-actions" id="board-actions" hidden>
               <button class="btn btn-ghost btn-sm" type="button" data-action="board-auto"><span aria-hidden="true">⚡</span><span>Собрать подиум</span></button>
@@ -355,7 +355,7 @@
               <span><i class="legend-line dim"></i> ещё не сыграно</span>
             </div>
           </div>
-          <div class="champion-slot" id="champion-slot"></div>
+          <div class="champion-slot" id="champion-slot" aria-live="polite"></div>
         </div>
 
         <div class="board-view" id="board-view" hidden>

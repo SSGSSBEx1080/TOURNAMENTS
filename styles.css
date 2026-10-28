@@ -574,9 +574,6 @@ body.is-muted .icon-btn .off{display:block}
 .match-row.is-winner .match-score{opacity:1;transform:none}
 .match-row.is-empty{cursor:default}
 .match-row.is-empty .match-name{color:var(--faint);font-weight:500;font-style:italic}
-.match-bye{font-size:.52rem;font-weight:800;letter-spacing:.08em;color:var(--faint)}
-.match.is-bye .match-row[data-player]{cursor:default}
-.match.is-bye .match-row[data-player]:hover{background:none}
 .bracket-hint{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;font-size:.72rem;color:var(--faint)}
 .bracket-hint b{color:var(--ink-2);font-weight:800}
 .bracket-legend{display:flex;flex-wrap:wrap;gap:12px}
@@ -1230,9 +1227,6 @@ h1,h2,.title-row{text-wrap:balance}
 .match-row.is-winner .match-score{opacity:1;transform:none}
 .match-row.is-empty{cursor:default}
 .match-row.is-empty .match-name{color:var(--faint);font-weight:500;font-style:italic}
-.match-bye{font-size:.5rem;font-weight:800;letter-spacing:.08em;color:var(--faint)}
-.match.is-bye .match-row[data-entrant]{cursor:default}
-.match.is-bye .match-row[data-entrant]:hover{background:none}
 .bracket-hint{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;font-size:.7rem;color:var(--faint)}
 .bracket-hint b{color:var(--ink-2);font-weight:800}
 .bracket-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.66rem}
@@ -1486,11 +1480,7 @@ body.is-idle .eyebrow .pulse{animation-play-state:paused}
 [data-theme="light"] .comp-shell::after{background:linear-gradient(180deg,rgba(255,255,255,.9) 0%,rgba(252,250,245,.95) 30%,rgba(248,245,238,.97) 100%)}
 .comp-head,.comp-brief,#bracket-body,#board-view{position:relative;z-index:1}
 
-/* bye: автопроход не кликается */
-.match-row.is-auto{cursor:default}
-.match-row.is-auto:hover{background:linear-gradient(90deg,rgba(53,224,255,.14),transparent 70%)}
-.match-row.is-auto .match-bye{color:var(--cyan);opacity:.85}
-.match-row.is-empty .match-bye{display:none}
+/* пустые слоты и bye в круговой не встречаются — правила удалены */
 @media (max-width:760px){
   .disc-card{min-height:214px}
   .md-hero.has-art{padding:13px}
