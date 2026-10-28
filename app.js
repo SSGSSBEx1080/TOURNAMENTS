@@ -396,13 +396,16 @@
       error: '',
       checkedAt: 0,
       dirty: false,
+      retries: 0,
       savedAt: 0,
       expires: '',
       login: ''
     },
     admins: [],
     log: [],
-    timer: null,
+    base: null,        /* последняя версия облака, которую видел браузер */
+    pushTimer: null,
+    retryTimer: null,
     pollTimer: null,
     applying: false
   };
@@ -479,62 +482,175 @@
       updatedBy: CLOUD.cfg.login || 'admin',
       admins: CLOUD.admins.slice(),
       log: CLOUD.log.slice(0, 60),
-      brackets: JSON.parse(JSON.stringify(state.brackets || {})),
+      brackets: (function () {
+        var out = {};
+        /* seed держим в облаке даже у пустой сетки: иначе после сброса
+           результаты пересобирались бы в другом порядке */
+        Object.keys(state.brackets || {}).forEach(function (id) {
+          var st = state.brackets[id] || {};
+          if (st.seed == null && !(st.winners && Object.keys(st.winners).length)) return;
+          out[id] = { seed: st.seed, winners: st.winners || {} };
+        });
+        return JSON.parse(JSON.stringify(out));
+      })(),
       boards: JSON.parse(JSON.stringify(state.boards || {})),
       roster: JSON.parse(JSON.stringify(state.rosterEdits || {}))
     };
   }
-  function cloudMerge(remote, local) {
-    var out = JSON.parse(JSON.stringify(remote || {}));
-    out.schema = 1;
-    out.mode = 'live';
-    out.admins = (local.admins && local.admins.length ? local.admins : (out.admins || [])).slice();
-    out.log = (local.log || []).concat(out.log || []).slice(0, 60);
-    /* круги: объединяем по каждому матчу, побеждает более свежая запись */
-    var brackets = {};
-    var rB = out.brackets || {}, lB = local.brackets || {};
-    Object.keys(rB).concat(Object.keys(lB)).forEach(function (id) {
-      if (brackets[id]) return;
-      var r = rB[id] || {}, l = lB[id] || {};
-      brackets[id] = {
-        seed: l.seed != null ? l.seed : r.seed,
-        winners: Object.assign({}, r.winners || {}, l.winners || {})
-      };
+  /* ── слияние: не терять чужие правки и не откатывать свои ─────────────
+     remote — что лежит в облаке, local — что в этом браузере, base — последняя
+     версия облака, которую видел браузер. Ключ, который локально отличается от
+     base (в том числе удалён), остаётся локальным; остальное берём из облака.
+     Без base (первый контакт) побеждает облако: старый кеш не спорит с сервером. */
+  function cloudSame(a, b) {
+    return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+  }
+  function cloudPick(remoteV, localV, baseV, hasBase) {
+    if (!hasBase) return localV === undefined ? remoteV : localV;
+    return cloudSame(localV, baseV) ? remoteV : localV;
+  }
+  function cloudKeySet() {
+    var seen = {};
+    for (var i = 0; i < arguments.length; i++) {
+      var m = arguments[i];
+      if (!m || typeof m !== 'object') continue;
+      Object.keys(m).forEach(function (k) { seen[k] = true; });
+    }
+    return seen;
+  }
+  /* Плоские словари: победители матчей, места подиума, правки состава. */
+  function cloudMergeMap(remoteMap, localMap, baseMap, hasBase) {
+    var seen = cloudKeySet(remoteMap, localMap, baseMap), out = {};
+    Object.keys(seen).forEach(function (k) {
+      var v = cloudPick(remoteMap && remoteMap[k], localMap && localMap[k], baseMap && baseMap[k], hasBase);
+      if (v === undefined || v === null) return;
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        var add = Array.isArray(v.add) ? v.add.slice() : [];
+        var drop = Array.isArray(v.drop) ? v.drop.slice() : [];
+        if (!add.length && !drop.length) return;   /* пустая правка — не правка */
+        out[k] = { add: add, drop: drop };
+        return;
+      }
+      out[k] = v;
     });
-    out.brackets = brackets;
-    var boards = {};
-    var rD = out.boards || {}, lD = local.boards || {};
-    Object.keys(rD).concat(Object.keys(lD)).forEach(function (id) {
-      if (boards[id]) return;
-      boards[id] = Object.assign({}, rD[id] || {}, lD[id] || {});
-    });
-    out.boards = boards;
-    out.roster = Object.assign({}, out.roster || {}, local.roster || {});
     return out;
   }
+  function cloudMergeBrackets(remoteB, localB, baseB, hasBase) {
+    var seen = cloudKeySet(remoteB, localB, baseB), out = {};
+    Object.keys(seen).forEach(function (id) {
+      var r = (remoteB && remoteB[id]) || {}, l = (localB && localB[id]) || {}, b = (baseB && baseB[id]) || {};
+      var winners = cloudMergeMap(r.winners, l.winners, b.winners, hasBase);
+      var seed = cloudPick(r.seed, l.seed, b.seed, hasBase);
+      if (!Object.keys(winners).length && (seed === undefined || seed === null)) return;
+      out[id] = {};
+      if (seed !== undefined && seed !== null) out[id].seed = seed;
+      out[id].winners = winners;
+    });
+    return out;
+  }
+  /* Подиумы: {disciplineId: {'1': playerId, '2': ..., '3': ...}} */
+  function cloudMergeBoards(remoteB, localB, baseB, hasBase) {
+    var seen = cloudKeySet(remoteB, localB, baseB), out = {};
+    Object.keys(seen).forEach(function (id) {
+      var places = cloudMergeMap((remoteB && remoteB[id]) || {}, (localB && localB[id]) || {}, (baseB && baseB[id]) || {}, hasBase);
+      if (!Object.keys(places).length) return;
+      out[id] = places;
+    });
+    return out;
+  }
+  function cloudMergeAdmins(remoteA, localA, baseA, hasBase) {
+    remoteA = Array.isArray(remoteA) ? remoteA.slice() : [];
+    localA = Array.isArray(localA) ? localA.slice() : [];
+    baseA = Array.isArray(baseA) ? baseA.slice() : [];
+    if (!hasBase) {
+      remoteA.forEach(function (x) { if (localA.indexOf(x) < 0) localA.push(x); });
+      return localA.slice(0, 20);
+    }
+    return (cloudSame(localA, baseA) ? remoteA : localA).slice(0, 20);
+  }
+  function cloudMergeLog(remoteL, localL) {
+    var out = [], seen = {};
+    (localL || []).concat(remoteL || []).forEach(function (x) {
+      if (!x || !x.at) return;
+      var k = x.at + '|' + (x.by || '') + '|' + (x.text || '');
+      if (seen[k]) return;
+      seen[k] = 1;
+      out.push(x);
+    });
+    out.sort(function (x, y) { return String(y.at).localeCompare(String(x.at)); });
+    return out.slice(0, 60);
+  }
+  function cloudMerge(remote, local, base) {
+    remote = remote || {};
+    local = local || {};
+    var hasBase = !!(base && typeof base === 'object');
+    return {
+      schema: 1,
+      mode: 'live',
+      rev: Math.max(Number(remote.rev) || 0, Number(local.rev) || 0),
+      updatedAt: remote.updatedAt || local.updatedAt || '',
+      updatedBy: remote.updatedBy || local.updatedBy || '',
+      admins: cloudMergeAdmins(remote.admins, local.admins, hasBase ? base.admins : null, hasBase),
+      log: cloudMergeLog(remote.log, local.log),
+      brackets: cloudMergeBrackets(remote.brackets, local.brackets, hasBase ? base.brackets : null, hasBase),
+      boards: cloudMergeBoards(remote.boards, local.boards, hasBase ? base.boards : null, hasBase),
+      roster: cloudMergeMap(remote.roster, local.roster, hasBase ? base.roster : null, hasBase)
+    };
+  }
 
-  /* Применяем файл к сайту: сюда приходят и админ, и обычный зритель. */
+  /* Снимок облака без служебных полей — с ним сравниваем локальные правки. */
+  function cloudSnapshot(src) {
+    src = src || {};
+    function plain(v) { return (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : {}; }
+    return {
+      admins: Array.isArray(src.admins) ? src.admins.slice() : [],
+      brackets: plain(src.brackets),
+      boards: plain(src.boards),
+      roster: plain(src.roster)
+    };
+  }
+  /* Есть ли в браузере правки, которых ещё нет в облаке. */
+  function cloudHasLocalChanges() {
+    if (!CLOUD.base) return !!CLOUD.status.dirty;
+    var local = cloudExport();
+    return !cloudSame(local.brackets, CLOUD.base.brackets)
+      || !cloudSame(local.boards, CLOUD.base.boards)
+      || !cloudSame(local.roster, CLOUD.base.roster);
+  }
+
+  /* Применяем файл к сайту: сюда приходят и админ, и обычный зритель.
+     Админу локальные правки не затираются: они склеиваются с облаком. */
   function cloudApply(remote) {
     if (!remote || typeof remote !== 'object') return false;
     var rev = Number(remote.rev) || 0;
     if (rev && rev < (CLOUD.status.rev || 0)) return false;
+    var local = cloudExport();
+    var mergeLocal = cloudHasToken() && (CLOUD.base || CLOUD.status.dirty);
+    var next = mergeLocal ? cloudMerge(remote, local, CLOUD.base) : remote;
     CLOUD.applying = true;
-    CLOUD.status.rev = rev;
+    CLOUD.status.rev = Math.max(rev, Number(CLOUD.status.rev) || 0);
     CLOUD.status.updatedAt = remote.updatedAt || '';
     CLOUD.status.updatedBy = remote.updatedBy || '';
-    CLOUD.admins = Array.isArray(remote.admins) ? remote.admins.slice(0, 20) : [];
-    CLOUD.log = Array.isArray(remote.log) ? remote.log.slice(0, 60) : [];
-    if (remote.brackets && typeof remote.brackets === 'object') state.brackets = remote.brackets;
-    if (remote.boards && typeof remote.boards === 'object') state.boards = remote.boards;
-    if (remote.roster && typeof remote.roster === 'object') state.rosterEdits = sanitizeRoster(remote.roster);
+    CLOUD.admins = Array.isArray(next.admins) ? next.admins.slice(0, 20) : [];
+    CLOUD.log = Array.isArray(next.log) ? next.log.slice(0, 60) : [];
+    if (next.brackets && typeof next.brackets === 'object') state.brackets = next.brackets;
+    if (next.boards && typeof next.boards === 'object') state.boards = next.boards;
+    if (next.roster && typeof next.roster === 'object') state.rosterEdits = sanitizeRoster(next.roster);
     applyRosterEdits();
     CLOUD.status.shared = remote.mode === 'live' ? 'live' : 'setup';
     cloudSyncMode();
     CLOUD.status.checkedAt = Date.now();
-    CLOUD.status.error = '';
+    if (!CLOUD.status.dirty) CLOUD.status.error = '';
+    CLOUD.base = cloudSnapshot(remote);
     CLOUD.applying = false;
     renderAll();
     renderCloudUI();
+    /* если в браузере остались правки, которых нет в облаке — отправим их сами */
+    if (mergeLocal && cloudHasLocalChanges()) {
+      CLOUD.status.dirty = true;
+      scheduleCloudPush(900);
+      renderCloudUI();
+    }
     return true;
   }
 
@@ -581,14 +697,48 @@
     CLOUD.log = CLOUD.log.slice(0, 60);
   }
 
+  /* Отложенная публикация: 0,9 с после правки, чтобы не коммитить каждый клик. */
+  function scheduleCloudPush(delay) {
+    if (!cloudHasToken()) return;
+    if (CLOUD.pushTimer) clearTimeout(CLOUD.pushTimer);
+    CLOUD.pushTimer = setTimeout(function () {
+      CLOUD.pushTimer = null;
+      if (CLOUD.status.syncing) return;
+      if (!CLOUD.status.dirty && !cloudHasLocalChanges()) return;
+      cloudPush(null, true);
+    }, Math.max(200, delay || 900));
+  }
+
+  /* Не сохранилось — пробуем сами, с нарастающей паузой. */
+  function scheduleCloudRetry() {
+    if (!cloudHasToken() || CLOUD.retryTimer) return;
+    var n = Math.min(Math.max(CLOUD.status.retries || 1, 1), 4);
+    var delay = Math.min(30000, 2500 * Math.pow(2, n - 1));
+    CLOUD.retryTimer = setTimeout(function () {
+      CLOUD.retryTimer = null;
+      if (CLOUD.status.syncing) return;
+      if (!CLOUD.status.dirty) return;
+      cloudPush(null, true);
+    }, delay);
+  }
+  function cloudRetryNow() {
+    if (CLOUD.retryTimer) { clearTimeout(CLOUD.retryTimer); CLOUD.retryTimer = null; }
+    if (!cloudHasToken()) { toast('Сначала войди как админ', '🔑'); return; }
+    CLOUD.status.retries = 0;
+    CLOUD.status.dirty = true;
+    cloudPush(null, false);
+  }
+
   function cloudPush(reason, silent) {
     if (!cloudHasToken() || !cloudReady()) return Promise.resolve(false);
     if (CLOUD.status.syncing) { CLOUD.status.dirty = true; return Promise.resolve(false); }
     CLOUD.status.syncing = true;
     CLOUD.status.dirty = false;
+    CLOUD.status.error = '';
     renderCloudUI();
     var sha = null;
     var url = cloudFileUrl();
+    var nextState = null;
     return fetch(url + '?ref=' + encodeURIComponent(CLOUD.cfg.branch), { headers: cloudHeaders(true), cache: 'no-store' })
       .then(function (r) {
         if (r.status === 404) return null;
@@ -603,14 +753,15 @@
           try { remote = text ? JSON.parse(text) : null; } catch (e) { remote = null; }
         }
         if (reason) cloudLog(reason);
-        var next = cloudMerge(remote || {}, cloudExport());
-        next.rev = Math.max(Number(remote && remote.rev) || 0, CLOUD.status.rev || 0) + 1;
-        next.updatedAt = new Date().toISOString();
-        next.updatedBy = CLOUD.cfg.login || 'admin';
-        next.mode = 'live';
+        /* склейка: наши правки поверх облака, чужие не теряем */
+        nextState = cloudMerge(remote || {}, cloudExport(), CLOUD.base);
+        nextState.rev = Math.max(Number(remote && remote.rev) || 0, CLOUD.status.rev || 0) + 1;
+        nextState.updatedAt = new Date().toISOString();
+        nextState.updatedBy = CLOUD.cfg.login || 'admin';
+        nextState.mode = 'live';
         var body = {
-          message: 'state: ' + (reason || 'обновление результатов') + ' (rev ' + next.rev + ')',
-          content: b64encode(JSON.stringify(next, null, 2)),
+          message: 'state: ' + (reason || 'обновление результатов') + ' (rev ' + nextState.rev + ')',
+          content: b64encode(JSON.stringify(nextState, null, 2)),
           branch: CLOUD.cfg.branch
         };
         if (sha) body.sha = sha;
@@ -624,29 +775,34 @@
         if (r.status === 401) throw new Error('токен истёк или отозван — создай новый в GitHub и вставь заново');
         if (r.status === 403) throw new Error('у токена нет права Contents: read & write на этот репозиторий');
         if (r.status === 404) throw new Error('репозиторий или файл недоступны токену');
-        if (r.status === 409) throw new Error('конфликт версий — нажми «Синхронизировать» ещё раз');
+        if (r.status === 409) throw new Error('конфликт версий — нажми «Повторить»');
         if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120)); });
-        /* локально сразу приводим состояние к опубликованному */
-        CLOUD.status.rev = (CLOUD.status.rev || 0) + 1;
-        CLOUD.status.shared = 'live';
-        cloudSyncMode();
-        CLOUD.status.updatedAt = new Date().toISOString();
-        CLOUD.status.updatedBy = CLOUD.cfg.login || 'admin';
-        CLOUD.status.error = '';
-        CLOUD.status.checkedAt = Date.now();
-        CLOUD.status.savedAt = Date.now();
         return true;
       })
       .catch(function (e) {
         CLOUD.status.error = String(e && e.message || e);
+        CLOUD.status.dirty = true;          /* правка остаётся в браузере */
+        CLOUD.status.retries = (CLOUD.status.retries || 0) + 1;
         if (!silent) toast('Не сохранилось в облако: ' + esc(CLOUD.status.error), '⚠️');
         return false;
       })
       .then(function (ok) {
         CLOUD.status.syncing = false;
-        renderCloudUI();
-        if (ok) cloudFlashSaved();
-        if (CLOUD.status.dirty && ok) { CLOUD.status.dirty = false; cloudPush(null, true); }
+        if (ok) {
+          CLOUD.status.retries = 0;
+          CLOUD.status.error = '';
+          CLOUD.status.savedAt = Date.now();
+          CLOUD.status.rev = nextState.rev;
+          CLOUD.status.updatedAt = nextState.updatedAt;
+          CLOUD.status.updatedBy = nextState.updatedBy;
+          CLOUD.base = cloudSnapshot(nextState);
+          renderCloudUI();
+          cloudFlashSaved();
+          if (CLOUD.status.dirty) { CLOUD.status.dirty = false; cloudPush(null, true); }
+        } else {
+          renderCloudUI();
+          scheduleCloudRetry();
+        }
         return ok;
       });
   }
@@ -669,8 +825,7 @@
     CLOUD.status.dirty = true;
     cloudClearFlash();
     renderCloudUI();
-    if (CLOUD.timer) clearTimeout(CLOUD.timer);
-    CLOUD.timer = setTimeout(function () { CLOUD.timer = null; cloudPush(null, true); }, 900);
+    scheduleCloudPush(900);
   }
 
   /* Проверяем токен: кто это и есть ли право писать. */
@@ -748,6 +903,7 @@
 
   /* ── админка: вход по токену, админы, журнал, бэкап ────────────────── */
   function cloudSavedText() {
+    if (cloudIsAdmin() && CLOUD.status.error && CLOUD.status.dirty) return 'не сохранилось — правка у меня, повторю сам';
     if (cloudIsAdmin() && CLOUD.status.syncing) return 'сохраняю…';
     if (cloudIsAdmin() && CLOUD.status.dirty) return 'жду сохранения…';
     if (CLOUD.status.updatedAt) return 'сохранено ' + clockShort(CLOUD.status.updatedAt);
@@ -775,6 +931,7 @@
   function cloudBarState() {
     if (CLOUD.status.syncing) return 'saving';
     if (CLOUD.status.savedAt && Date.now() - CLOUD.status.savedAt < 2600) return 'saved';
+    if (CLOUD.status.error && CLOUD.status.dirty) return 'error';
     if (CLOUD.status.dirty) return 'saving';
     return 'idle';
   }
@@ -783,9 +940,11 @@
     var state = cloudBarState();
     var savedBadge = state === 'saved'
       ? '<span class="cb-pill is-ok"><i aria-hidden="true">✓</i>сохранено</span>'
-      : (state === 'saving'
-        ? '<span class="cb-pill is-busy"><i class="cb-spin" aria-hidden="true"></i>' + (cloudIsAdmin() ? 'сохраняю' : 'обновляю') + '</span>'
-        : '');
+      : (state === 'error'
+        ? '<span class="cb-pill is-error"><i aria-hidden="true">!</i>не сохранено</span>'
+        : (state === 'saving'
+          ? '<span class="cb-pill is-busy"><i class="cb-spin" aria-hidden="true"></i>' + (cloudIsAdmin() ? 'сохраняю' : 'обновляю') + '</span>'
+          : ''));
 
     if (cloudIsAdmin()) {
       var live = CLOUD.status.savedAt && Date.now() - CLOUD.status.savedAt < 2600;
@@ -799,6 +958,9 @@
         '</div>' +
         savedBadge +
         '<div class="cb-actions">' +
+          (state === 'error'
+            ? '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-retry"><span aria-hidden="true">⟳</span><span>Повторить</span></button>'
+            : '') +
           '<button class="btn btn-primary btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как вносить</span></button>' +
           '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-panel"><span aria-hidden="true">⚙️</span><span>Настройки</span></button>' +
         '</div>' +
@@ -1338,6 +1500,20 @@
     return 'Раунд ' + (index + 1);
   }
 
+  /* Ключ матча — пара участников, а не номер ячейки в раскладке.
+     Так результат остаётся за своими игроками, даже если состав сетки
+     поменяли: добавили или сняли бойца и порядок раундов сдвинулся. */
+  function pairKey(a, b) {
+    if (!a || !b) return '';
+    return String(a) < String(b) ? a + '~' + b : b + '~' + a;
+  }
+  /* Победа матча: новый формат (пара) или старый (номер раунда-матча). */
+  function winnerOf(st, m, t, i) {
+    var pick = st.winners[pairKey(m.a, m.b)];
+    if (pick === undefined) pick = st.winners[t + '-' + i];   /* ключи до v4.11 */
+    return (pick === m.a || pick === m.b) ? pick : null;
+  }
+
   function buildTours(d) {
     var st = bracketState(d.id);
     var pool = entrants(d).map(function (e) { return e.key; });
@@ -1356,8 +1532,7 @@
     }
     tours.forEach(function (matches, t) {
       matches.forEach(function (m, i) {
-        var pick = st.winners[t + '-' + i];
-        if (pick === m.a || pick === m.b) m.winner = pick;
+        m.winner = winnerOf(st, m, t, i);
       });
     });
     return tours;
@@ -1491,7 +1666,7 @@
     var played = !!m.winner;
     var score = win ? '1' : (played ? '0' : '–');
     return '<button class="rr-row' + (win ? ' is-winner' : '') + (played && !win ? ' is-loser' : '') + (e.team ? ' is-team' : '') + '"' +
-      ' type="button" data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + t + '-' + i + '"' +
+      ' type="button" data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + esc(pairKey(m.a, m.b)) + '"' +
       ' aria-pressed="' + (win ? 'true' : 'false') + '" title="' + esc(e.label) + ' — победа в этом матче">' +
       '<span class="rr-name"><span class="rr-seednum" aria-hidden="true">' + seed + '.</span> ' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
       '<span class="rr-score" aria-hidden="true">' + score + '</span>' +
@@ -1501,7 +1676,7 @@
   function rrMatch(d, m, t, i, seeds, number) {
     return '<div class="rr-item">' +
       '<span class="rr-num" aria-hidden="true">' + number + '</span>' +
-      '<div class="rr-match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
+      '<div class="rr-match' + (m.winner ? ' is-decided' : '') + '" data-key="' + esc(pairKey(m.a, m.b)) + '">' +
         rrRow(d, m, t, i, m.a, seeds[m.a] || 0) +
         rrRow(d, m, t, i, m.b, seeds[m.b] || 0) +
       '</div></div>';
@@ -1821,7 +1996,8 @@
         var a = (entrantByKey(d, m.a) || {}).strength || 1;
         var b = (entrantByKey(d, m.b) || {}).strength || 1;
         var pa = 0.5 + (a - b) / 60;
-        st.winners[t + '-' + i] = Math.random() < pa ? m.a : m.b;
+        delete st.winners[t + '-' + i];
+        st.winners[pairKey(m.a, m.b)] = Math.random() < pa ? m.a : m.b;
       });
       saveBrackets();
       renderLeague(d); renderChampion(d);
@@ -1840,15 +2016,23 @@
     var d = discById(state.bracketId);
     if (!d || isBoard(d)) return;
     var tours = buildTours(d);
-    var parts = key.split('-');
-    var m = tours[+parts[0]] && tours[+parts[0]][+parts[1]];
+    var m = null, ti = null;
+    tours.forEach(function (matches, t) {
+      matches.forEach(function (x, i) {
+        if (!m && pairKey(x.a, x.b) === key) { m = x; ti = t + '-' + i; }
+      });
+    });
     if (!m || !m.a || !m.b) return;
     var st = bracketState(d.id);
-    if (st.winners[key] === entrant) delete st.winners[key];
-    else st.winners[key] = entrant;
+    var pk = pairKey(m.a, m.b);
+    var cur = st.winners[pk];
+    if (cur === undefined) cur = st.winners[ti];   /* победа из старого формата */
+    delete st.winners[ti];                         /* дальше живём только парами */
+    if (cur === entrant) delete st.winners[pk];
+    else st.winners[pk] = entrant;
     saveBrackets();
-    haptic(st.winners[key] ? 14 : 8);
-    sound(st.winners[key] ? 720 : 380, 0.06, 'triangle', 0.03);
+    haptic(st.winners[pk] ? 14 : 8);
+    sound(st.winners[pk] ? 720 : 380, 0.06, 'triangle', 0.03);
     renderLeague(d);
     renderChampion(d);
     if (leagueTotals(buildTours(d)).complete) slotCelebrate();
@@ -2938,6 +3122,7 @@
         if (state.matrixEdit) toast('Правка состава: клик по точке добавляет или убирает бойца из сетки', '👥');
         break;
       case 'cloud-panel': adminModal(); break;
+      case 'cloud-retry': cloudRetryNow(); break;
       case 'admin-login': adminLoginModal(); break;
       case 'how-to-edit': howToEditModal(); break;
       case 'cloud-connect': {
@@ -3336,11 +3521,16 @@
     CLOUD.pollTimer = setInterval(function () {
       if (document.hidden) return;
       if (CLOUD.status.syncing) return;
-      if (CLOUD.status.dirty) return;
-      cloudPull(true);
+      cloudPull(true).then(function () {
+        /* если в браузере остались неотправленные правки — отправляем сейчас */
+        if (CLOUD.status.dirty && !CLOUD.status.syncing) scheduleCloudPush(400);
+      });
     }, 25000);
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && cloudReady() && !CLOUD.status.syncing) cloudPull(true);
+      if (document.hidden || !cloudReady() || CLOUD.status.syncing) return;
+      cloudPull(true).then(function () {
+        if (CLOUD.status.dirty && !CLOUD.status.syncing) scheduleCloudPush(400);
+      });
     });
   }
 
