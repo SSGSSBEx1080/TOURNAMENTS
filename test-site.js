@@ -190,6 +190,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('пары не повторяются', new Set(allPairs).size === L.matches, new Set(allPairs).size + ' уникальных из ' + L.matches);
   check('нет пустых слотов и bye', qa('#bracket-board .match-row.is-empty') === 0 && qa('#bracket-board .match-row.is-auto') === 0, 'чисто');
   check('старт без чемпиона', /ещё не сыграна/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 50));
+  check('шапка таблицы И/В/П/О', /участник/.test($('#league-table .league-row.is-head').textContent) && /И/.test($('#league-table .is-head .lr-games').textContent) && /В/.test($('#league-table .is-head .lr-wins').textContent) && /П/.test($('#league-table .is-head .lr-losses').textContent) && /О/.test($('#league-table .is-head .lr-points').textContent), $('#league-table .league-row.is-head').textContent.replace(/\s+/g, ' '));
   check('таблица стартует с нулей', $$('#league-table .league-row:not(.is-head) .lr-points').every((el) => el.textContent === '0'), '0');
 
   $('#bracket-board .match-row[data-entrant]').click();
