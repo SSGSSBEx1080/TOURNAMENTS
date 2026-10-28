@@ -697,17 +697,18 @@
     return '<button class="rr-row' + (win ? ' is-winner' : '') + (played && !win ? ' is-loser' : '') + (e.team ? ' is-team' : '') + '"' +
       ' type="button" data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + t + '-' + i + '"' +
       ' aria-pressed="' + (win ? 'true' : 'false') + '" title="' + esc(e.label) + ' — победа в этом матче">' +
-      '<span class="rr-seed" aria-hidden="true">' + seed + '</span>' +
-      '<span class="rr-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
+      '<span class="rr-name"><span class="rr-seednum" aria-hidden="true">' + seed + '.</span> ' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
       '<span class="rr-score" aria-hidden="true">' + score + '</span>' +
       '</button>';
   }
 
-  function rrMatch(d, m, t, i, seeds) {
-    return '<div class="rr-match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
-      rrRow(d, m, t, i, m.a, seeds[m.a] || 0) +
-      rrRow(d, m, t, i, m.b, seeds[m.b] || 0) +
-      '</div>';
+  function rrMatch(d, m, t, i, seeds, number) {
+    return '<div class="rr-item">' +
+      '<span class="rr-num" aria-hidden="true">' + number + '</span>' +
+      '<div class="rr-match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
+        rrRow(d, m, t, i, m.a, seeds[m.a] || 0) +
+        rrRow(d, m, t, i, m.b, seeds[m.b] || 0) +
+      '</div></div>';
   }
 
   function renderLeague(d) {
@@ -723,12 +724,14 @@
     if (!tours.length) {
       host.innerHTML = '<div class="league-empty">Нужно хотя бы два участника — на эту дисциплину пока мало заявок.</div>';
     } else {
+      var number = 0;
       host.innerHTML = tours.map(function (matches, t) {
         var done = matches.filter(function (m) { return !!m.winner; }).length;
         return '<section class="rr-round' + (done === matches.length ? ' is-done' : '') + '" data-tour="' + t + '">' +
-          '<header class="rr-round-head"><b>' + tourLabel(t) + '</b><span>' + done + ' / ' + matches.length + '</span></header>' +
-          '<div class="rr-matches">' + matches.map(function (m, i) {
-            return rrMatch(d, m, t, i, seeds);
+          '<h3 class="rr-round-head"><b>' + tourLabel(t) + '</b></h3>' +
+          '<div class="rr-round-matches">' + matches.map(function (m, i) {
+            number += 1;
+            return rrMatch(d, m, t, i, seeds, number);
           }).join('') + '</div></section>';
       }).join('');
     }
@@ -736,13 +739,13 @@
     var table = $('#league-table');
     if (table) {
       var head = '<thead><tr>' +
-        '<th class="rr-rank" scope="col">#</th>' +
+        '<th class="rr-rank" scope="col">Место</th>' +
         '<th class="rr-who" scope="col">Участник</th>' +
-        '<th class="rr-gl" scope="col" title="матчи: победы-поражения-ничьи">Матчи В-П-Н</th>' +
-        '<th class="rr-tb" scope="col" title="тай-брейк: победы в мини-таблице личных встреч">ТБ</th>' +
-        '<th class="rr-w" scope="col">Победы</th>' +
+        '<th class="rr-gl" scope="col" title="матчи: победы-поражения-ничьи">1. Матчи В-П-Н</th>' +
+        '<th class="rr-tb" scope="col" title="тай-брейк: победы в мини-таблице личных встреч">2. Тай-брейк</th>' +
+        '<th class="rr-w" scope="col">3. Победы</th>' +
         '<th class="rr-d" scope="col">Ничьи</th>' +
-        '<th class="rr-p" scope="col">Очки</th>' +
+        '<th class="rr-p" scope="col">4. Очки</th>' +
         '</tr></thead>';
       var body = rows.length ? rows.map(function (row) {
         var crown = totals.complete && row.place === 1;
@@ -750,9 +753,7 @@
         return '<tr class="rr-tr' + (crown ? ' is-champion' : '') + (totals.complete && row.place <= 3 ? ' is-podium place-' + row.place : '') + '"' +
           (pid ? ' data-player="' + esc(pid) + '" role="button" tabindex="0"' : '') + '>' +
           '<td class="rr-rank">' + (crown ? '👑' : row.place) + '</td>' +
-          '<td class="rr-who"><span class="rr-who-in">' + row.entrant.players.map(function (pl) {
-            return '<span class="avatar" style="--c1:' + pl.c1 + ';--c2:' + pl.c2 + '"><span>' + esc(pl.initials) + '</span></span>';
-          }).join('') + '<b>' + esc(row.entrant.label) + '</b></span></td>' +
+          '<td class="rr-who"><span class="rr-name-full"><span class="rr-seednum" aria-hidden="true">' + (seeds[row.key] || 0) + '.</span> ' + esc(row.entrant.label) + '</span></td>' +
           '<td class="rr-gl">' + row.wins + ' - ' + row.losses + ' - 0</td>' +
           '<td class="rr-tb">' + (row.tiebreak || 0) + '</td>' +
           '<td class="rr-w">' + row.wins + '</td>' +
@@ -768,8 +769,8 @@
 
     var note = $('#league-note');
     if (note) {
-      note.innerHTML = '<span><b>Матчи В-П-Н</b> — победы-поражения-ничьи: ничьих в круговой нет, счёт всегда 1:0.</span>' +
-        '<span><b>ТБ</b> — тай-брейк: победы в мини-таблице личных встреч равных по очкам. <b>Очки</b> = победы, а место в таблице превращается в сезонные 3 / 2 / 1' +
+      note.innerHTML = '<span><b>1. Матчи В-П-Н</b> — победы-поражения-ничьи: ничьих в круговой нет, счёт всегда 1:0.</span>' +
+        '<span><b>2. Тай-брейк</b> — победы в мини-таблице личных встреч равных по очкам. <b>Очки</b> = победы, а место в таблице превращается в сезонные 3 / 2 / 1' +
         ((compOf(d).seats || 1) > 1 ? ' (в 2×2 — 1,5 / 1 / 0,5).' : '.') + '</span>';
     }
   }

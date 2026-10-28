@@ -202,7 +202,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('каждый играет n−1 матчей', badAppearances.length === 0 && Object.keys(appearances).length === L.n, badAppearances.join(',') || L.n + ' участников × ' + (L.n - 1));
 
   check('старт без чемпиона', /ещё не сыграна/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 50));
-  check('колонки таблицы как на Challonge', /Участник/.test($('#league-table thead').textContent) && /Матчи В-П-Н/.test($('#league-table thead').textContent) && /ТБ/.test($('#league-table thead').textContent) && /Победы/.test($('#league-table thead').textContent) && /Ничьи/.test($('#league-table thead').textContent) && /Очки/.test($('#league-table thead').textContent), $('#league-table thead').textContent.replace(/\s+/g, ' ').trim());
+  check('колонки таблицы как на Challonge', ['Место', 'Участник', '1. Матчи В-П-Н', '2. Тай-брейк', '3. Победы', 'Ничьи', '4. Очки'].every((t) => $('#league-table thead').textContent.indexOf(t) >= 0), $('#league-table thead').textContent.replace(/\s+/g, ' ').trim());
+  check('номера матчей 1…N', $$('#bracket-board .rr-num').map((el) => Number(el.textContent)).every((v, i) => v === i + 1), qa('#bracket-board .rr-num') + ' матчей');
+  check('раунд = строка матчей', $$('#bracket-board .rr-round').every((round) => round.querySelectorAll('.rr-match').length === Math.floor(L.n / 2)), $$('#bracket-board .rr-round').map((r) => r.querySelectorAll('.rr-match').length).join(','));
+  check('сид в имени бойца', $$('#bracket-board .rr-name').every((el) => /^\d+\.\s/.test(el.textContent.replace(/\s+/g, ' ').trim())), $$('#bracket-board .rr-name')[0].textContent.trim());
+  check('сид в таблице', $$('#league-table tbody .rr-name-full').every((el) => /^\d+\.\s/.test(el.textContent.replace(/\s+/g, ' ').trim())), $$('#league-table tbody .rr-name-full')[0].textContent.trim());
   check('таблица стартует с нулей', $$('#league-table tbody .rr-p').every((el) => el.textContent === '0'), '0');
   check('несыгранный матч = прочерк', $$('#bracket-board .rr-score').every((el) => el.textContent === '–'), '–');
 
