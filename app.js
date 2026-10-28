@@ -396,6 +396,7 @@
       error: '',
       checkedAt: 0,
       dirty: false,
+      savedAt: 0,
       expires: '',
       login: ''
     },
@@ -633,6 +634,7 @@
         CLOUD.status.updatedBy = CLOUD.cfg.login || 'admin';
         CLOUD.status.error = '';
         CLOUD.status.checkedAt = Date.now();
+        CLOUD.status.savedAt = Date.now();
         return true;
       })
       .catch(function (e) {
@@ -643,6 +645,7 @@
       .then(function (ok) {
         CLOUD.status.syncing = false;
         renderCloudUI();
+        if (ok) cloudFlashSaved();
         if (CLOUD.status.dirty && ok) { CLOUD.status.dirty = false; cloudPush(null, true); }
         return ok;
       });
@@ -664,6 +667,7 @@
       return;
     }
     CLOUD.status.dirty = true;
+    cloudClearFlash();
     renderCloudUI();
     if (CLOUD.timer) clearTimeout(CLOUD.timer);
     CLOUD.timer = setTimeout(function () { CLOUD.timer = null; cloudPush(null, true); }, 900);
@@ -745,42 +749,92 @@
   /* ── админка: вход по токену, админы, журнал, бэкап ────────────────── */
   function cloudSavedText() {
     if (cloudIsAdmin() && CLOUD.status.syncing) return 'сохраняю…';
-    if (cloudIsAdmin() && CLOUD.status.dirty) return 'сохраняю…';
+    if (cloudIsAdmin() && CLOUD.status.dirty) return 'жду сохранения…';
     if (CLOUD.status.updatedAt) return 'сохранено ' + clockShort(CLOUD.status.updatedAt);
     return 'ещё нечего сохранять';
   }
 
+  /* Новая правка гасит подсветку «сохранено», иначе она врёт про актуальность. */
+  function cloudClearFlash() {
+    if (CLOUD.flashTimer) { clearTimeout(CLOUD.flashTimer); CLOUD.flashTimer = null; }
+    CLOUD.status.savedAt = 0;
+  }
+
+  /* Свежее сохранение подсвечиваем на пару секунд — видно, что клик дошёл. */
+  function cloudFlashSaved() {
+    CLOUD.status.savedAt = Date.now();
+    renderCloudUI();
+    if (CLOUD.flashTimer) clearTimeout(CLOUD.flashTimer);
+    CLOUD.flashTimer = setTimeout(function () {
+      CLOUD.flashTimer = null;
+      CLOUD.status.savedAt = 0;
+      renderCloudUI();
+    }, 2600);
+  }
+
+  function cloudBarState() {
+    if (CLOUD.status.syncing) return 'saving';
+    if (CLOUD.status.savedAt && Date.now() - CLOUD.status.savedAt < 2600) return 'saved';
+    if (CLOUD.status.dirty) return 'saving';
+    return 'idle';
+  }
+
   function cloudBadgeHtml() {
+    var state = cloudBarState();
+    var savedBadge = state === 'saved'
+      ? '<span class="cb-pill is-ok"><i aria-hidden="true">✓</i>сохранено</span>'
+      : (state === 'saving'
+        ? '<span class="cb-pill is-busy"><i class="cb-spin" aria-hidden="true"></i>' + (cloudIsAdmin() ? 'сохраняю' : 'обновляю') + '</span>'
+        : '');
+
     if (cloudIsAdmin()) {
-      return '<div class="cloud-bar is-live">' +
-        '<span class="cb-icon" aria-hidden="true">🟢</span>' +
-        '<div class="cb-text"><b>Ты админ — можно менять</b>' +
-          '<span>Всё сохраняется само и сразу видно всем · ' + esc(cloudSavedText()) + '</span></div>' +
+      var live = CLOUD.status.savedAt && Date.now() - CLOUD.status.savedAt < 2600;
+      return '<div class="cloud-bar is-live" data-state="' + state + '">' +
+        '<span class="cb-glow" aria-hidden="true"></span>' +
+        '<span class="cb-orb" aria-hidden="true"><b>●</b></span>' +
+        '<div class="cb-text">' +
+          '<span class="cb-kicker">режим админа · всё видят все</span>' +
+          '<b>Ты админ — можно менять</b>' +
+          '<span>' + (live ? 'правка сохранена в облако — её уже видят все' : esc(cloudSavedText())) + '</span>' +
+        '</div>' +
+        savedBadge +
         '<div class="cb-actions">' +
           '<button class="btn btn-primary btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как вносить</span></button>' +
           '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-panel"><span aria-hidden="true">⚙️</span><span>Настройки</span></button>' +
-        '</div></div>';
+        '</div>' +
+        '<span class="cb-progress" aria-hidden="true"><i></i></span></div>';
     }
     if (cloudIsReadonly()) {
-      return '<div class="cloud-bar is-read">' +
-        '<span class="cb-icon" aria-hidden="true">🔒</span>' +
-        '<div class="cb-text"><b>Только чтение</b>' +
-          '<span>Результаты вносит админ · ' + esc(CLOUD.status.updatedAt ? 'обновлено ' + clockShort(CLOUD.status.updatedAt) : 'пока пусто') + '</span></div>' +
+      return '<div class="cloud-bar is-read" data-state="' + state + '">' +
+        '<span class="cb-glow" aria-hidden="true"></span>' +
+        '<span class="cb-orb" aria-hidden="true"><b>🔒</b></span>' +
+        '<div class="cb-text">' +
+          '<span class="cb-kicker">общие результаты · только чтение</span>' +
+          '<b>Результаты вносит админ</b>' +
+          '<span>' + esc(CLOUD.status.updatedAt ? 'обновлено ' + clockShort(CLOUD.status.updatedAt) : 'пока пусто') + '</span>' +
+        '</div>' +
+        savedBadge +
         '<div class="cb-actions">' +
           '<button class="btn btn-primary btn-sm" type="button" data-action="admin-login"><span aria-hidden="true">🔑</span><span>Я админ — войти</span></button>' +
           '<button class="btn btn-ghost btn-sm" type="button" data-action="how-to-edit"><span aria-hidden="true">?</span><span>Как это работает</span></button>' +
-        '</div></div>';
+        '</div>' +
+        '<span class="cb-progress" aria-hidden="true"><i></i></span></div>';
     }
     /* локальный режим: не мозолим глаза зрителям, показываем только владельцу */
     if (!cloudHasToken()) return '';
-    return '<div class="cloud-bar is-local">' +
-      '<span class="cb-icon" aria-hidden="true">💾</span>' +
-      '<div class="cb-text"><b>Пока только у тебя</b>' +
-        '<span>Правки не видны другим. Включи общий режим — и их увидят все.</span></div>' +
+    return '<div class="cloud-bar is-local" data-state="' + state + '">' +
+      '<span class="cb-glow" aria-hidden="true"></span>' +
+      '<span class="cb-orb" aria-hidden="true"><b>💾</b></span>' +
+      '<div class="cb-text">' +
+        '<span class="cb-kicker">локальный режим</span>' +
+        '<b>Пока только у тебя</b>' +
+        '<span>Правки не видны другим. Включи общий режим — и их увидят все.</span>' +
+      '</div>' +
       '<div class="cb-actions">' +
         '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-go-live"><span aria-hidden="true">🌍</span><span>Включить общий режим</span></button>' +
       '</div></div>';
   }
+
   function renderCloudUI() {
     var chip = $('#cloud-chip');
     if (chip) chip.innerHTML = cloudBadgeHtml();

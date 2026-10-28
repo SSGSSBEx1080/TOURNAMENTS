@@ -443,9 +443,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.9\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.10\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.9\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.9\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  const cssSrc = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
+  check('стили: полоса режима в HUD-стиле', /\.cloud-bar\{/.test(cssSrc) && /--cb-glow/.test(cssSrc) && /@keyframes cb-sweep/.test(cssSrc) && /\.cb-pill\.is-ok/.test(cssSrc) && /\.cloud-bar\[data-state="saving"\]/.test(cssSrc), 'HUD: кромка, блик, пилюля, прогресс');
+  const rmBlock = (cssSrc.match(/@media \(prefers-reduced-motion: reduce\)\{[\s\S]*?\n\}/g) || []).filter((b) => /\.cloud-bar/.test(b))[0] || '';
+  check('стили: анимации отключаются при reduced-motion', /\.cloud-bar/.test(rmBlock) && /animation:none/.test(rmBlock), rmBlock.replace(/\s+/g, ' ').slice(0, 60));
+  check('ассеты с версией', /styles\.css\?v=4\.10\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.10\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -491,9 +495,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 10, updatedBy: 'boss', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: {} } }, boards: {}, roster: {} });
   check('облако: админ видит общий режим', window.GP.cloud.status.mode === 'live' && !document.body.classList.contains('is-readonly'), window.GP.cloud.status.mode);
   check('облако: полоса показывает админа', /Ты админ/.test($('#cloud-chip').textContent) && /сохранено|сохраняю/.test($('#cloud-chip').textContent), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 70));
+  check('полоса: живой индикатор режима', !!$('#cloud-chip .cloud-bar.is-live .cb-orb') && /режим админа/.test($('#cloud-chip .cb-kicker').textContent) && !!$('#cloud-chip .cb-progress'), $('#cloud-chip .cb-kicker').textContent);
   const winBefore = qa('#bracket-board .rr-row.is-winner');
   $('#bracket-board .rr-row[data-entrant]').click();
   check('облако: админ ставит результат', qa('#bracket-board .rr-row.is-winner') === winBefore + 1, winBefore + ' → ' + qa('#bracket-board .rr-row.is-winner'));
+  const barSaving = $('#cloud-chip .cloud-bar');
+  check('полоса: правка сразу показывает «сохраняю»', barSaving.getAttribute('data-state') === 'saving' && !!$('#cloud-chip .cb-pill.is-busy .cb-spin') && /сохраняю/.test($('#cloud-chip .cb-pill').textContent), barSaving.getAttribute('data-state') + ' · ' + $('#cloud-chip .cb-pill').textContent);
+  check('полоса: пока правка не улетела — видно «жду сохранения»', /жду сохранения/.test($('#cloud-chip .cb-text').textContent), $('#cloud-chip .cb-text').textContent.replace(/\s+/g, ' ').trim().slice(-30));
+  window.GP.cloud.status.dirty = false;
+  window.GP.cloud.status.savedAt = Date.now();
+  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 12, updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: { '0-0': 'p4' } } }, boards: {}, roster: {} });
+  check('полоса: свежее сохранение — зелёная галочка', $('#cloud-chip .cloud-bar').getAttribute('data-state') === 'saved' && !!$('#cloud-chip .cb-pill.is-ok') && /сохранено/.test($('#cloud-chip .cb-pill').textContent), $('#cloud-chip .cloud-bar').getAttribute('data-state') + ' · ' + $('#cloud-chip .cb-pill').textContent);
+  window.GP.cloud.status.savedAt = 0;
 
   window.GP.cloud.setToken('');
   window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 11, updatedBy: 'boss', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: { '0-0': 'p4' } } }, boards: {}, roster: {} });
@@ -521,8 +534,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // полоса режима: зритель видит «войти», админ — «можно менять»
   window.GP.cloud.setToken('');
+  window.GP.cloud.status.dirty = false;
   window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 20, updatedAt: new Date().toISOString(), admins: ['boss'], log: [{ at: new Date().toISOString(), by: 'boss', text: 'включил общий режим' }], brackets: {}, boards: {}, roster: {} });
-  check('полоса: зрителю предлагают войти', /Только чтение/.test($('#cloud-chip').textContent) && !!$('[data-action="admin-login"]'), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
+  check('полоса: у зрителя свой стиль', !!$('#cloud-chip .cloud-bar.is-read') && /только чтение/.test($('#cloud-chip .cb-kicker').textContent) && $('#cloud-chip .cloud-bar').getAttribute('data-state') !== 'saving', $('#cloud-chip .cloud-bar').getAttribute('data-state'));
+  check('полоса: зрителю предлагают войти', /только чтение/i.test($('#cloud-chip').textContent) && /Результаты вносит админ/.test($('#cloud-chip').textContent) && !!$('[data-action="admin-login"]'), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
   // простой вход (пока зритель)
   $('[data-action="admin-login"]').click();
   check('вход: одно поле и одна кнопка', !!$('#cloud-token') && !!$('[data-action="cloud-connect"]') && /Только ты меняешь/.test($('#modal-body').textContent), '');
