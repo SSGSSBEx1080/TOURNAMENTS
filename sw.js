@@ -2,7 +2,7 @@
    Стратегия: навигация и JS/CSS — network-first (обновления приезжают сразу),
    картинки — cache-first, офлайн — из кеша.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.11.0';
+const VERSION = 'gamepiada-v4.11.1';
 const CORE = [
   './',
   './index.html',
