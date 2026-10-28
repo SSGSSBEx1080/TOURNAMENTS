@@ -323,6 +323,9 @@
           </div>
           <div class="comp-controls">
             <span class="select-wrap"><select class="select" id="bracket-select" aria-label="Дисциплина"></select></span>
+            <div class="comp-actions">
+              <button class="btn btn-glass btn-sm" type="button" data-action="roster-edit" title="Кто играет в этой сетке"><span aria-hidden="true">👥</span><span>Состав</span><b class="roster-count" id="roster-comp-count">6</b></button>
+            </div>
             <div class="comp-actions" id="bracket-actions">
               <button class="btn btn-ghost btn-sm" type="button" data-action="auto-bracket" data-label='<span aria-hidden="true">⚡</span><span>Автопрогноз</span>'><span aria-hidden="true">⚡</span><span>Автопрогноз</span></button>
               <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Пересобрать раунды"><span aria-hidden="true">🔀</span><span>Раунды</span></button>
@@ -342,7 +345,7 @@
         <div id="bracket-body">
           <div class="rr-board" id="bracket-board"></div>
           <div class="bracket-hint">
-            <span><b>Как это работает:</b> каждый играет с каждым один раз. Клик по бойцу — победа 1:0, повторный клик снимает результат. Раунды и таблица пересчитываются сразу.</span>
+            <span><b>Как это работает:</b> каждый играет с каждым один раз. Клик по бойцу — победа 1:0, повторный клик снимает результат. Раунды и таблица пересчитываются сразу, а состав сетки правится кнопкой «Состав».</span>
             <div class="bracket-legend">
               <span><i class="legend-score is-win">1</i> победа</span>
               <span><i class="legend-score">0</i> поражение</span>
@@ -405,9 +408,16 @@
       <div class="matrix-wrap reveal">
         <div class="matrix-head">
           <div><h3>Матрица дисциплин</h3><span>Кто где заявился — 17 × 8</span></div>
-          <span class="tag is-gold">клик по имени открывает профиль</span>
+          <div class="matrix-tools">
+            <span class="tag is-gold" id="matrix-hint">клик по имени или точке — профиль бойца</span>
+            <button class="btn btn-ghost btn-sm" type="button" data-action="matrix-edit" id="matrix-edit-btn" aria-pressed="false" title="Кто в какой сетке"><span aria-hidden="true">✎</span><span>Правка состава</span></button>
+          </div>
         </div>
         <div class="matrix-scroll" id="matrix-scroll"></div>
+        <div class="roster-bar" id="roster-bar" hidden>
+          <span>Ручных правок состава: <b id="roster-bar-count">0</b> · форма и Google Таблица не меняются</span>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="roster-reset-all"><span aria-hidden="true">↺</span><span>Сбросить к форме</span></button>
+        </div>
         <div class="matrix-legend">
           <span><i class="matrix-dot on" aria-hidden="true"></i> участвует</span>
           <span><i class="matrix-dot" aria-hidden="true"></i> не заявлен</span>

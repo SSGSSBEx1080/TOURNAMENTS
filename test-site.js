@@ -361,6 +361,62 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('#palette-input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   check('palette closes', $('#palette').hidden, '');
 
+  // ── правка состава: кто в какой сетке ─────────────────────────────
+  const totalBefore = qa('#matrix-scroll .matrix-dot.on');
+  const rosterBefore = qa('#league-table tbody tr');
+  $('[data-action="roster-edit"]').click();
+  check('состав: модалка открылась', !$('#modal').hidden && qa('#roster-list .roster-row') === qa('#roster-grid .player-card'), qa('#roster-list .roster-row') + ' строк');
+  check('состав: счётчик в шапке', $('#roster-comp-count').textContent === String(rosterBefore), $('#roster-comp-count').textContent);
+  const offRow = $('#roster-list .roster-row.is-off');
+  const offNick = offRow.querySelector('.roster-who b').textContent;
+  offRow.click();
+  check('состав: боец добавлен в сетку', qa('#league-table tbody tr') === rosterBefore + 1 && qa('#roster-list .roster-row.is-on') === rosterBefore + 1, offNick + ' → ' + qa('#league-table tbody tr') + ' строк');
+  check('состав: правка записалась', Object.keys(window.GP.state.rosterEdits).length === 1, JSON.stringify(window.GP.state.rosterEdits));
+  check('состав: модалка осталась открытой', !$('#modal').hidden, '');
+  check('состав: чип «состав изменён»', /состав изменён/.test($('#bracket-meta').textContent), $('#bracket-meta').textContent.replace(/\s+/g, ' ').slice(-40));
+  $('[data-action="roster-reset-current"]').click();
+  check('состав: сброс сетки', qa('#league-table tbody tr') === rosterBefore && Object.keys(window.GP.state.rosterEdits).length === 0, qa('#league-table tbody tr') + ' строк');
+  $('[data-action="close-modal"]').click();
+  check('состав: модалка закрылась', $('#modal').hidden, '');
+
+  // матрица как редактор
+  $('[data-action="matrix-edit"]').click();
+  check('матрица: режим правки включается', $('.matrix-wrap').classList.contains('is-editing') && !$('#roster-bar').hidden, $('#matrix-hint').textContent);
+  const offDot = $$('#matrix-scroll .matrix-dot').filter((b) => !b.classList.contains('on'))[0];
+  const offDotPlayer = offDot.getAttribute('data-player');
+  const offDotDisc = offDot.getAttribute('data-disc');
+  offDot.click();
+  check('матрица: точка добавила арену', qa('#matrix-scroll .matrix-dot.on') === totalBefore + 1, qa('#matrix-scroll .matrix-dot.on') + ' / ' + totalBefore);
+  check('матрица: точка стала активной', $('#matrix-scroll .matrix-dot[data-player="' + offDotPlayer + '"][data-disc="' + offDotDisc + '"]').classList.contains('on'), offDotPlayer + '·' + offDotDisc);
+  check('матрица: счётчик правок', $('#roster-bar-count').textContent === '1', $('#roster-bar-count').textContent);
+  $('[data-action="roster-reset-all"]').click();
+  check('сброс всех правок к форме', qa('#matrix-scroll .matrix-dot.on') === totalBefore && Object.keys(window.GP.state.rosterEdits).length === 0, qa('#matrix-scroll .matrix-dot.on') + ' / ' + totalBefore);
+
+  // боец → арены
+  $('#roster-grid .player-card').click();
+  $('[data-md-roster-player]').click();
+  check('арены бойца: 17 дисциплин', qa('#roster-list .roster-row') === 17, qa('#roster-list .roster-row'));
+  const onRow = $('#roster-list .roster-row[aria-checked="true"]');
+  const onDisc = onRow.getAttribute('data-roster-disc');
+  onRow.click();
+  check('арены бойца: снятие работает', $('#roster-list .roster-row[data-roster-disc="' + onDisc + '"]').getAttribute('aria-checked') === 'false' && Object.keys(window.GP.state.rosterEdits).length === 1, onDisc);
+  check('арены бойца: матрица обновилась', qa('#matrix-scroll .matrix-dot.on') === totalBefore - 1, qa('#matrix-scroll .matrix-dot.on'));
+
+  // ссылка на раскладку
+  let sharedUrl = '';
+  window.navigator.clipboard = { writeText: (t) => { sharedUrl = t; return Promise.resolve(); } };
+  $('[data-action="roster-share"]').click();
+  await sleep(40);
+  check('состав: ссылка с кодом копируется', /\?r=[A-Za-z0-9_-]+#bracket$/.test(sharedUrl), sharedUrl.slice(0, 76));
+  const keepPid = $('#roster-list .roster-row').getAttribute('data-roster-player');
+  $('[data-action="close-modal"]').click();
+  // оставляем одну правку, чтобы проверить её выживание после live-синка
+  const keptDisc = $('#matrix-scroll .matrix-dot:not(.on)').getAttribute('data-disc');
+  const keptPid = $('#matrix-scroll .matrix-dot:not(.on)').getAttribute('data-player');
+  $('#matrix-scroll .matrix-dot[data-player="' + keptPid + '"][data-disc="' + keptDisc + '"]').click();
+  check('правка перед синком', Object.keys(window.GP.state.rosterEdits).length > 0, JSON.stringify(window.GP.state.rosterEdits));
+  $('[data-action="matrix-edit"]').click();
+
   // ── theme ──────────────────────────────────────────────────────────
   const themeBefore = document.documentElement.getAttribute('data-theme');
   $('#theme-toggle').click();
@@ -377,6 +433,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('live status', /Google Таблица/.test($('#data-text').textContent) && /11 ответов/.test($('#data-text').textContent), $('#data-text').textContent);
   check('live stats total', Number($('#stats-total').textContent) > 88, $('#stats-total').textContent);
   check('live matrix rows', qa('#matrix-scroll tbody tr') === 17, qa('#matrix-scroll tbody tr'));
+
+  // ── состав после live-синка ────────────────────────────────────────
+  const liveKept = window.GP.state.players.filter(function (p) { return p.id === keptPid; })[0];
+  check('правка состава пережила live-синк', !!liveKept && liveKept.disciplines.indexOf(keptDisc) >= 0 && Object.keys(window.GP.state.rosterEdits).length > 0, liveKept ? liveKept.nick + ' · ' + liveKept.disciplines.join(',') : 'нет бойца');
+  $('[data-action="roster-reset-all"]').click();
+  check('правки сбрасываются после синка', Object.keys(window.GP.state.rosterEdits).length === 0, JSON.stringify(window.GP.state.rosterEdits));
 
   // ── errors ─────────────────────────────────────────────────────────
   check('no js errors', errors.length === 0, errors.join(' | '));

@@ -23,7 +23,8 @@
     duo: 'gamepiada-duo',
     brackets: 'gamepiada-league-v5',
     bracketId: 'gamepiada-bracket-id',
-    boards: 'gamepiada-boards-v4'
+    boards: 'gamepiada-boards-v4',
+    roster: 'gamepiada-roster-v1'
   };
 
   /* ─────────────────────────── helpers ─────────────────────────── */
@@ -196,6 +197,10 @@
     bracketId: 'dota11',
     brackets: {},
     boards: {},
+    rosterEdits: {},
+    matrixEdit: false,
+    rosterModal: null,
+    fromUrlCode: false,
     duoA: 'p2',
     duoB: 'p7',
     chartOpen: false,
@@ -220,7 +225,15 @@
     if (savedBoards && typeof savedBoards === 'object') state.boards = savedBoards;
     var savedBracketId = localStorage.getItem(LS.bracketId);
     if (savedBracketId && DISC.some(function (d) { return d.id === savedBracketId; })) state.bracketId = savedBracketId;
+    var savedRoster = JSON.parse(localStorage.getItem(LS.roster) || 'null');
+    if (savedRoster && typeof savedRoster === 'object') state.rosterEdits = sanitizeRoster(savedRoster);
   } catch (e) { /* ignore */ }
+  /* Ссылка вида ?r=<код> переносит раскладку состава на другое устройство. */
+  var urlRosterMatch = /[?&]r=([^&#]+)/.exec(location.search || '');
+  if (urlRosterMatch) {
+    var fromUrl = readRosterCode(urlRosterMatch[1]);
+    if (fromUrl) { state.rosterEdits = fromUrl; state.fromUrlCode = true; }
+  }
 
   function save(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
@@ -257,6 +270,110 @@
     }
     return state.brackets[id];
   }
+  /* ── состав: локальная правка «кто в какой сетке» ───────────────────────
+     Google Таблица остаётся только для чтения: правки хранятся отдельным
+     слоем (добавил/снял) и накладываются поверх ответов формы при каждом
+     рендере — в том числе после live-синка. */
+  function sanitizeRoster(raw) {
+    var out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    Object.keys(raw).forEach(function (pid) {
+      /* боец может прийти только из live-синка — не выбрасываем такие правки,
+         просто ждём, пока он появится в state.players */
+      if (!pid || /^(__proto__|constructor|prototype)$/.test(pid)) return;
+      var ed = raw[pid] || {};
+      var add = (Array.isArray(ed.add) ? ed.add : []).filter(function (id) { return !!discById(id); });
+      var drop = (Array.isArray(ed.drop) ? ed.drop : []).filter(function (id) { return !!discById(id); });
+      if (add.length || drop.length) out[pid] = { add: add, drop: drop };
+    });
+    return out;
+  }
+  function saveRosterEdits() {
+    try { localStorage.setItem(LS.roster, JSON.stringify(state.rosterEdits)); } catch (e) { /* quota */ }
+  }
+  /* База — ответы формы, _base не даёт правкам «съесть» друг друга. */
+  function applyRosterEdits() {
+    state.players.forEach(function (p) {
+      if (!p._base) p._base = (p.disciplines || []).slice();
+      var base = p._base.filter(function (id) { return !!discById(id); });
+      var ed = state.rosterEdits[p.id];
+      if (!ed) { p.disciplines = base.slice(); return; }
+      var out = base.filter(function (id) { return (ed.drop || []).indexOf(id) < 0; });
+      (ed.add || []).forEach(function (id) {
+        if (discById(id) && out.indexOf(id) < 0) out.push(id);
+      });
+      p.disciplines = out;
+    });
+  }
+  function baseDisciplines(p) {
+    return ((p && (p._base || p.disciplines)) || []).slice();
+  }
+  function rosterToggle(playerId, discId) {
+    var p = playerById(playerId);
+    if (!p || !discById(discId)) return null;
+    var base = baseDisciplines(p);
+    var on = (p.disciplines || []).indexOf(discId) >= 0;
+    var ed = state.rosterEdits[p.id] || { add: [], drop: [] };
+    ed.add = (ed.add || []).filter(function (x) { return x !== discId; });
+    ed.drop = (ed.drop || []).filter(function (x) { return x !== discId; });
+    if (on) {
+      if (base.indexOf(discId) >= 0) ed.drop.push(discId);
+    } else if (base.indexOf(discId) < 0) {
+      ed.add.push(discId);
+    }
+    if (!ed.add.length && !ed.drop.length) delete state.rosterEdits[p.id];
+    else state.rosterEdits[p.id] = ed;
+    saveRosterEdits();
+    applyRosterEdits();
+    return !on;
+  }
+  function resetRoster(playerId) {
+    if (playerId) delete state.rosterEdits[playerId];
+    else state.rosterEdits = {};
+    saveRosterEdits();
+    applyRosterEdits();
+  }
+  function resetRosterDisc(discId) {
+    Object.keys(state.rosterEdits).forEach(function (pid) {
+      var ed = state.rosterEdits[pid];
+      ed.add = (ed.add || []).filter(function (x) { return x !== discId; });
+      ed.drop = (ed.drop || []).filter(function (x) { return x !== discId; });
+      if (!ed.add.length && !ed.drop.length) delete state.rosterEdits[pid];
+    });
+    saveRosterEdits();
+    applyRosterEdits();
+  }
+  function rosterEditCount(discId) {
+    var n = 0;
+    Object.keys(state.rosterEdits).forEach(function (pid) {
+      var ed = state.rosterEdits[pid] || {};
+      var add = ed.add || [], drop = ed.drop || [];
+      if (discId) n += add.filter(function (x) { return x === discId; }).length + drop.filter(function (x) { return x === discId; }).length;
+      else n += add.length + drop.length;
+    });
+    return n;
+  }
+  function rosterCode() {
+    try {
+      return btoa(unescape(encodeURIComponent(JSON.stringify(state.rosterEdits))))
+        .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    } catch (e) { return ''; }
+  }
+  function readRosterCode(code) {
+    try {
+      var b = String(code || '').replace(/-/g, '+').replace(/_/g, '/');
+      while (b.length % 4) b += '=';
+      var obj = JSON.parse(decodeURIComponent(escape(atob(b))));
+      return sanitizeRoster(obj);
+    } catch (e) { return null; }
+  }
+  function rosterShareUrl() {
+    var base = EVENT.siteUrl || (location.origin + location.pathname);
+    base = String(base).replace(/[?#].*$/, '');
+    var code = rosterCode();
+    return base + (code ? '?r=' + code : '') + '#bracket';
+  }
+
   function confirmedDuos() {
     return allPairStats().filter(function (x) { return x.mutual; }).length;
   }
@@ -675,8 +792,11 @@
       meta.innerHTML = '<span class="tag"><b>слот ' + d.order + '</b> · ~' + d.time + ' MSK</span>' +
         '<span class="tag">' + esc(isBoard(d) ? 'общий зачёт' : 'каждый с каждым') + '</span>' +
         '<span class="tag is-gold">' + esc(isBoard(d) ? 'места 1–3' : seriesOf(d)) + '</span>' +
-        '<span class="tag">' + list.length + ' ' + plural(list.length, [c.seats > 1 ? 'команда' : 'боец', c.seats > 1 ? 'команды' : 'бойца', c.seats > 1 ? 'команд' : 'бойцов']) + '</span>';
+        '<span class="tag">' + list.length + ' ' + plural(list.length, [c.seats > 1 ? 'команда' : 'боец', c.seats > 1 ? 'команды' : 'бойца', c.seats > 1 ? 'команд' : 'бойцов']) + '</span>' +
+        (rosterEditCount(d.id) ? '<span class="tag is-edit" title="состав правился вручную в этом браузере">состав изменён</span>' : '');
     }
+    var rosterCount = $('#roster-comp-count');
+    if (rosterCount) rosterCount.textContent = String(list.length);
     var icon = $('#comp-icon');
     if (icon) icon.textContent = d.icon;
     var shell = $('#comp-shell');
@@ -771,7 +891,8 @@
     if (note) {
       note.innerHTML = '<span><b>1. Матчи В-П-Н</b> — победы-поражения-ничьи: ничьих в круговой нет, счёт всегда 1:0.</span>' +
         '<span><b>2. Тай-брейк</b> — победы в мини-таблице личных встреч равных по очкам. <b>Очки</b> = победы, а место в таблице превращается в сезонные 3 / 2 / 1' +
-        ((compOf(d).seats || 1) > 1 ? ' (в 2×2 — 1,5 / 1 / 0,5).' : '.') + '</span>';
+        ((compOf(d).seats || 1) > 1 ? ' (в 2×2 — 1,5 / 1 / 0,5).' : '.') + '</span>' +
+        (rosterEditCount(d.id) ? '<span><b>Состав правился вручную</b> — в этой сетке ' + rosterEditCount(d.id) + ' ' + plural(rosterEditCount(d.id), ['правка', 'правки', 'правок']) + ' к ответам формы. Вернуть исходный состав: матрица дисциплин → «Сбросить к форме».</span>' : '');
     }
   }
   function renderChampion(d) {
@@ -1106,6 +1227,25 @@
   function numberWord(n) { return NUM_WORDS[n] || String(n); }
   function ordinalWord(n) { return ORD_WORDS[n] || String(n) + '-м'; }
 
+  function renderMatrixMode() {
+    var wrap = $('.matrix-wrap');
+    if (wrap) wrap.classList.toggle('is-editing', !!state.matrixEdit);
+    var btn = $('#matrix-edit-btn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(!!state.matrixEdit));
+      btn.classList.toggle('is-on', !!state.matrixEdit);
+    }
+    var hint = $('#matrix-hint');
+    if (hint) hint.textContent = state.matrixEdit ? 'правка: клик по точке — добавить или убрать из сетки' : 'клик по имени или точке — профиль бойца';
+    var bar = $('#roster-bar');
+    var n = rosterEditCount();
+    if (bar) {
+      bar.hidden = !n && !state.matrixEdit;
+      var num = $('#roster-bar-count');
+      if (num) num.textContent = String(n);
+    }
+  }
+
   function renderMatrix() {
     var host = $('#matrix-scroll');
     if (!host) return;
@@ -1116,7 +1256,8 @@
       return '<tr><th><div class="mx-disc"><i aria-hidden="true">' + d.icon + '</i>' + esc(d.name) + ' ' + esc(d.mode) + '<small>слот ' + d.order + '</small></div></th>' +
         state.players.map(function (p) {
           var on = (p.disciplines || []).indexOf(d.id) >= 0;
-          return '<td><button class="matrix-dot' + (on ? ' on' : '') + '" type="button" data-player="' + p.id + '" data-disc="' + d.id + '" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '" aria-label="' + esc((on ? 'Да: ' : 'Нет: ') + p.nick + ' · ' + d.name + ' ' + d.mode) + '"></button></td>';
+          var edited = !!state.rosterEdits[p.id];
+          return '<td><button class="matrix-dot' + (on ? ' on' : '') + (edited ? ' is-edited' : '') + '" type="button" data-player="' + p.id + '" data-disc="' + d.id + '" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '" aria-label="' + esc((on ? 'Да: ' : 'Нет: ') + p.nick + ' · ' + d.name + ' ' + d.mode) + '"></button></td>';
         }).join('') + '</tr>';
     }).join('') + '</tbody>';
     host.innerHTML = '<table class="matrix">' + head + body + '</table>';
@@ -1471,6 +1612,7 @@
         return '<button class="md-person" type="button" data-md-player="' + p.id + '"><span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' + esc(p.nick) + '</button>';
       }).join('') : '<span class="modal-info">Пока никто — стань первым.</span>') + '</div></div>' +
       '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-grid="' + d.id + '">' + (isBoard(d) ? 'Открыть заезд' : 'Открыть таблицу') + '</button>' +
+      '<button class="btn btn-ghost" type="button" data-md-roster="' + d.id + '">Изменить состав</button>' +
       '<button class="btn btn-ghost" type="button" data-md-share-disc="' + d.id + '">Поделиться</button>' +
       '<button class="btn btn-ghost" type="button" data-md-ics="' + d.id + '">Когда играем</button></div>';
     openModal(html);
@@ -1502,8 +1644,128 @@
       }).join('') : '<span class="modal-info">Не указаны — можно звать в пару.</span>') + '</div></div>' +
       '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-synergy="' + p.id + '">Подобрать дуо</button>' +
       (best ? '<button class="btn btn-ghost" type="button" data-md-disc="' + best.id + '">Любимая арена</button>' : '') +
+      '<button class="btn btn-ghost" type="button" data-md-roster-player="' + p.id + '">Изменить арены</button>' +
       '<button class="btn btn-ghost" type="button" data-md-share-player="' + p.id + '">Поделиться</button></div>';
     openModal(html);
+  }
+
+  /* ────────── правка состава: дисциплина → бойцы, боец → арены ────────── */
+  function rosterFlag(p, discId) {
+    var base = baseDisciplines(p);
+    var on = (p.disciplines || []).indexOf(discId) >= 0;
+    var inBase = base.indexOf(discId) >= 0;
+    if (on && !inBase) return { text: 'добавлен', cls: 'is-added' };
+    if (on) return { text: 'в сетке', cls: '' };
+    if (inBase) return { text: 'снят', cls: 'is-dropped' };
+    return { text: '—', cls: '' };
+  }
+  function rosterAvatar(p) {
+    return '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>';
+  }
+  function rosterRowHtml(playerId, discId) {
+    var p = playerById(playerId), d = discById(discId);
+    if (!p || !d) return '';
+    var on = (p.disciplines || []).indexOf(d.id) >= 0;
+    var flag = rosterFlag(p, d.id);
+    var who = state.rosterModal && state.rosterModal.mode === 'player'
+      ? '<b>' + d.icon + ' ' + esc(d.name) + ' ' + esc(d.mode) + '</b><small>слот ' + d.order + ' · ' + esc(isBoard(d) ? 'заезд' : seriesOf(d)) + '</small>'
+      : '<b>' + esc(p.nick) + '</b><small>' + (p.name && p.name !== p.nick ? esc(p.name) + ' · ' : '') + (p.disciplines || []).length + ' ' + plural((p.disciplines || []).length, ['арена', 'арены', 'арен']) + '</small>';
+    return '<button class="roster-row' + (on ? ' is-on' : ' is-off') + (flag.cls ? ' is-edited ' + flag.cls : '') + '"' +
+      ' type="button" role="switch" aria-checked="' + (on ? 'true' : 'false') + '"' +
+      ' data-roster-player="' + esc(p.id) + '" data-roster-disc="' + esc(d.id) + '">' +
+      (state.rosterModal && state.rosterModal.mode === 'player' ? '<span class="roster-icon" aria-hidden="true">' + d.icon + '</span>' : rosterAvatar(p)) +
+      '<span class="roster-who">' + who + '</span>' +
+      '<span class="roster-flag">' + esc(flag.text) + '</span>' +
+      '</button>';
+  }
+  function rosterMatches(query, text) {
+    var q = norm(query);
+    if (!q) return true;
+    return norm(text).indexOf(q) >= 0;
+  }
+  function rosterListHtml() {
+    var m = state.rosterModal;
+    if (!m) return '';
+    if (m.mode === 'disc') {
+      var d = discById(m.id);
+      if (!d) return '';
+      var rows = state.players.filter(function (p) {
+        return rosterMatches(m.query, [p.nick, p.name, (p.aliases || []).join(' ')].join(' '));
+      }).map(function (p) { return rosterRowHtml(p.id, d.id); }).join('');
+      return rows || '<div class="roster-empty">Никого не нашли — попробуй другой ник.</div>';
+    }
+    var p = playerById(m.id);
+    if (!p) return '';
+    var discs = queue().filter(function (d) {
+      return rosterMatches(m.query, [d.name, d.mode, RU_TERMS[d.id] || ''].join(' '));
+    }).map(function (d) { return rosterRowHtml(p.id, d.id); }).join('');
+    return discs || '<div class="roster-empty">Такой дисциплины нет.</div>';
+  }
+  function rosterModalStat() {
+    var m = state.rosterModal;
+    if (!m) return '';
+    if (m.mode === 'disc') {
+      var d = discById(m.id);
+      var n = d ? participants(d).length : 0;
+      var edits = rosterEditCount(m.id);
+      return n + ' ' + plural(n, ['боец', 'бойца', 'бойцов']) + ' в сетке' + (edits ? ' · ' + edits + ' ' + plural(edits, ['правка', 'правки', 'правок']) : '');
+    }
+    var p = playerById(m.id);
+    return (p ? (p.disciplines || []).length : 0) + ' ' + plural(p ? (p.disciplines || []).length : 0, ['арена', 'арены', 'арен']) +
+      (p && state.rosterEdits[p.id] ? ' · есть ручные правки' : '');
+  }
+  function refreshRosterModal() {
+    var host = $('#roster-list');
+    if (host) host.innerHTML = rosterListHtml();
+    var stat = $('#roster-modal-stat');
+    if (stat) stat.textContent = rosterModalStat();
+  }
+  function rosterModalShell(kicker, title, sub, accent) {
+    return '<div class="md-hero" style="--a:' + accent + ';--b:' + accent + '">' +
+      '<span class="md-icon" aria-hidden="true">👥</span>' +
+      '<div><span class="md-kicker">' + kicker + '</span>' +
+      '<h3 class="md-title">' + title + '</h3>' +
+      '<div class="md-sub">' + sub + '</div></div></div>' +
+      '<div class="roster-tools"><label class="search-field">' +
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>' +
+        '<input type="search" id="roster-modal-search" placeholder="' + (state.rosterModal.mode === 'disc' ? 'Найти бойца…' : 'Найти дисциплину…') + '" autocomplete="off" aria-label="Поиск">' +
+      '</label><span class="roster-stat" id="roster-modal-stat"></span></div>' +
+      '<div class="roster-list" id="roster-list"></div>' +
+      '<p class="roster-note">Правка живёт в этом браузере и не меняет Google Таблицу — ссылку с готовой раскладкой можно скопировать кнопкой ниже. Если сетка уже играется, смена состава пересобирает пары: результаты сбрасываются кнопкой «Сброс» в блоке турниров.</p>' +
+      '<div class="md-actions"><button class="btn btn-primary" type="button" data-action="close-modal">Готово</button>' +
+      '<button class="btn btn-ghost" type="button" data-action="roster-share">Скопировать ссылку</button>' +
+      '<button class="btn btn-ghost" type="button" data-action="roster-reset-current">Сбросить правки</button></div>';
+  }
+  function rosterModal(discId) {
+    var d = discById(discId) || discById(state.bracketId);
+    if (!d) return;
+    state.rosterModal = { mode: 'disc', id: d.id, query: '' };
+    openModal(rosterModalShell(
+      'состав · локальная правка · слот ' + d.order,
+      esc(d.name) + ' <span style="color:' + d.accent + '">' + esc(d.mode) + '</span>',
+      'Отметь, кто играет в этой сетке. Клик по строке добавляет или убирает бойца, круги и таблица пересоберутся сразу.',
+      d.accent
+    ));
+    refreshRosterModal();
+  }
+  function playerRosterModal(playerId) {
+    var p = playerById(playerId);
+    if (!p) return;
+    state.rosterModal = { mode: 'player', id: p.id, query: '' };
+    openModal(rosterModalShell(
+      'арены бойца · локальная правка',
+      esc(p.nick),
+      esc(p.name) + ' · отметь дисциплины, где боец играет. Состав круговой и матрица обновятся сразу.',
+      p.c1
+    ));
+    refreshRosterModal();
+  }
+  function rosterToggleUI(playerId, discId) {
+    var nowOn = rosterToggle(playerId, discId);
+    if (nowOn == null) return;
+    sound(nowOn ? 700 : 420, 0.05, 'triangle', 0.03);
+    renderAll();
+    refreshRosterModal();
   }
 
   /* ─────────────────────────── palette ─────────────────────────── */
@@ -1512,6 +1774,8 @@
     { name: 'Случайный боец', type: 'Действие', icon: '🎯', hint: 'рандом', run: function () { randomPlayer(); } },
     { name: 'Случайное дуо', type: 'Действие', icon: '🧬', hint: 'рандом', run: function () { randomDuo(); } },
     { name: 'Автопрогноз круговой', type: 'Действие', icon: '⚡', hint: 'круговая', run: function () { autoBracket(); } },
+    { name: 'Кто в какой сетке', type: 'Действие', icon: '👥', hint: 'состав', run: function () { rosterModal(state.bracketId); } },
+    { name: 'Правка состава в матрице', type: 'Действие', icon: '✎', hint: 'матрица', run: function () { state.matrixEdit = true; renderMatrixMode(); var m = $('#roster'); if (m) m.scrollIntoView({ behavior: 'smooth' }); } },
     { name: 'Пересобрать раунды', type: 'Действие', icon: '🔀', hint: 'круговая', run: function () { shuffleBracket(); } },
     { name: 'Сбросить таблицу', type: 'Действие', icon: '↺', hint: 'круговая', run: function () { resetBracket(); } },
     { name: 'Когда играем', type: 'Действие', icon: '📅', hint: 'даты', run: function () { datesTbd(); } },
@@ -1897,6 +2161,7 @@
   /* ─────────────────────────── render all ─────────────────────────── */
   function renderAll() {
     if (!state.players.length) state.players = SNAP.slice();
+    applyRosterEdits();
     if (!playerById(state.duoA)) state.duoA = state.players[0].id;
     if (!playerById(state.duoB)) state.duoB = state.players[Math.min(1, state.players.length - 1)].id;
     renderTicker();
@@ -1905,6 +2170,7 @@
     renderComp();
     renderRoster();
     renderMatrix();
+    renderMatrixMode();
     fillDuoSelects();
     renderDuo();
     renderPairs();
@@ -1950,6 +2216,34 @@
       case 'auto-bracket': autoBracket(); break;
       case 'ics': downloadICS(); break;
       case 'dates': datesTbd(); break;
+      case 'roster-edit': rosterModal(state.bracketId); break;
+      case 'matrix-edit':
+        state.matrixEdit = !state.matrixEdit;
+        renderMatrixMode();
+        sound(state.matrixEdit ? 660 : 420, 0.05, 'triangle', 0.03);
+        if (state.matrixEdit) toast('Правка состава: клик по точке добавляет или убирает бойца из сетки', '👥');
+        break;
+      case 'roster-reset-all':
+        resetRoster();
+        renderAll();
+        sound(380, 0.06, 'sine', 0.03);
+        toast('Состав вернулся к ответам формы', '↺');
+        break;
+      case 'roster-reset-current':
+        if (state.rosterModal && state.rosterModal.mode === 'disc') resetRosterDisc(state.rosterModal.id);
+        else if (state.rosterModal) resetRoster(state.rosterModal.id);
+        else resetRoster();
+        renderAll();
+        refreshRosterModal();
+        sound(380, 0.06, 'sine', 0.03);
+        toast('Ручные правки сброшены', '↺');
+        break;
+      case 'roster-share':
+        copy('Раскладка состава GAMEpiada: ' + rosterShareUrl()).then(function () {
+          toast(rosterEditCount() ? 'Ссылка на раскладку скопирована — открой её на другом устройстве' : 'Ссылка на состав скопирована', '🔗');
+        });
+        break;
+      case 'close-modal': closeModal(); break;
       case 'board-auto': boardAuto(); break;
       case 'board-reset': boardReset(); break;
       case 'board-share': shareBoard(); break;
@@ -1986,8 +2280,17 @@
     if (playerCard) { playerModal(playerCard.getAttribute('data-player')); return; }
     var leagueRow = e.target.closest('#league-table tr[data-player]');
     if (leagueRow) { playerModal(leagueRow.getAttribute('data-player')); return; }
+    var rosterRow = e.target.closest('[data-roster-player][data-roster-disc]');
+    if (rosterRow) { rosterToggleUI(rosterRow.getAttribute('data-roster-player'), rosterRow.getAttribute('data-roster-disc')); return; }
     var matrixDot = e.target.closest('.matrix-dot');
-    if (matrixDot) { playerModal(matrixDot.getAttribute('data-player')); return; }
+    if (matrixDot) {
+      if (state.matrixEdit) { rosterToggleUI(matrixDot.getAttribute('data-player'), matrixDot.getAttribute('data-disc')); return; }
+      playerModal(matrixDot.getAttribute('data-player')); return;
+    }
+    var mdRoster = e.target.closest('[data-md-roster]');
+    if (mdRoster) { rosterModal(mdRoster.getAttribute('data-md-roster')); return; }
+    var mdRosterPlayer = e.target.closest('[data-md-roster-player]');
+    if (mdRosterPlayer) { playerRosterModal(mdRosterPlayer.getAttribute('data-md-roster-player')); return; }
     var pairCard = e.target.closest('.pair-card');
     if (pairCard) { setDuo(pairCard.getAttribute('data-pair-a'), pairCard.getAttribute('data-pair-b'), true); toast('Пара загружена в дуо-лаб', '🧬'); return; }
     var bar = e.target.closest('.bar-row');
@@ -2094,6 +2397,7 @@
     if (e.target.id === 'disc-search') { state.discQuery = e.target.value; renderDisc(); }
     else if (e.target.id === 'roster-search') { state.rosterQuery = e.target.value; renderRoster(); }
     else if (e.target.id === 'palette-input') { state.paletteIndex = 0; renderPalette(); }
+    else if (e.target.id === 'roster-modal-search' && state.rosterModal) { state.rosterModal.query = e.target.value; refreshRosterModal(); }
   });
   document.addEventListener('change', function (e) {
     if (e.target.id === 'bracket-select') setBracketDisc(e.target.value);
@@ -2193,6 +2497,13 @@
     var autoBtn = $('[data-action="auto-bracket"]');
     if (autoBtn && !autoBtn.dataset.label) autoBtn.dataset.label = autoBtn.innerHTML;
     $$('.reveal').forEach(function (el) { if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add('in'); });
+    if (state.fromUrlCode) {
+      saveRosterEdits();
+      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignore */ }
+      window.setTimeout(function () {
+        toast('Состав загружен из ссылки: ' + rosterEditCount() + ' ' + plural(rosterEditCount(), ['правка', 'правки', 'правок']), '👥');
+      }, 400);
+    }
     renderAll();
     setDataStatus('Снимок формы · ' + state.players.length + ' ' + plural(state.players.length, ['ответ', 'ответа', 'ответов']), '');
     tickClocks();
