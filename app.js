@@ -799,6 +799,10 @@
           renderCloudUI();
           cloudFlashSaved();
           if (CLOUD.status.dirty) { CLOUD.status.dirty = false; cloudPush(null, true); }
+          else if (cloudHasLocalChanges()) {          /* дошлём: первый пуш мог быть без базы */
+            CLOUD.status.dirty = true;
+            scheduleCloudPush(600);
+          }
         } else {
           renderCloudUI();
           scheduleCloudRetry();
@@ -2767,6 +2771,17 @@
       if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
+  /* Случайный клик по «Раунды»/«Сброс» не должен стирать результаты:
+     если в сетке уже что-то отмечено, первый клик только предупреждает. */
+  var riskArmed = {};
+  function riskConfirm(action, id) {
+    var key = action + ':' + id;
+    var now = Date.now();
+    if (riskArmed[key] && now - riskArmed[key] < 6000) { riskArmed[key] = 0; return true; }
+    riskArmed[key] = now;
+    return false;
+  }
+
   function shuffleBracket() {
     if (guardReadonly('Пересобирает раунды админ.')) return;
     cancelAuto();
@@ -2774,6 +2789,10 @@
     if (!d) return;
     if (isBoard(d)) { boardReset(); return; }
     var st = bracketState(d.id);
+    if (Object.keys(st.winners || {}).length && !riskConfirm('shuffle', d.id)) {
+      toast('В сетке уже есть результаты. Нажми <b>«Раунды»</b> ещё раз — пары пересоберутся, а отметки сбросятся.', '⚠️');
+      return;
+    }
     st.seed = (st.seed * 1664525 + 1013904223) >>> 0;
     st.winners = {};
     saveBrackets();
@@ -2787,6 +2806,10 @@
     var d = discById(state.bracketId);
     if (!d) return;
     if (isBoard(d)) { boardReset(); return; }
+    if (Object.keys(bracketState(d.id).winners || {}).length && !riskConfirm('reset', d.id)) {
+      toast('Результаты уже отмечены. Нажми <b>«Сброс»</b> ещё раз, если правда нужно очистить сетку.', '⚠️');
+      return;
+    }
     bracketState(d.id).winners = {};
     saveBrackets();
     renderComp();

@@ -250,6 +250,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   check('равенство побед решает мини-таблица', tieProblems.length === 0, tieProblems.join(', ') || playedRows.length + ' участников');
 
+  const winsBeforeReset = qa('#bracket-board .rr-row.is-winner');
+  $('[data-action="reset-bracket"]').click();
+  check('сброс: первый клик только предупреждает', qa('#bracket-board .rr-row.is-winner') === winsBeforeReset && winsBeforeReset > 0, winsBeforeReset + ' побед остались');
   $('[data-action="reset-bracket"]').click();
   check('сброс очищает таблицу', $('#bracket-progress').textContent.trim() === '0 / ' + leagueTotal && qa('#bracket-board .rr-row.is-winner') === 0, $('#bracket-progress').textContent);
 
@@ -260,6 +263,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('league switch', /Шахматы/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
   check('chess: каждый с каждым', C.matches === C.n * (C.n - 1) / 2 && C.matches > 0, C.matches + ' матчей, ' + C.n + ' участников');
   check('chess: раунды по кругу', C.rounds === (C.n % 2 ? C.n : C.n - 1), C.rounds + ' раундов');
+  $('#bracket-board .rr-row[data-entrant]').click();
+  const chessWins = qa('#bracket-board .rr-row.is-winner');
+  $('[data-action="shuffle-bracket"]').click();
+  check('пересборка раундов не стирает результаты по случайному клику', chessWins === 1 && qa('#bracket-board .rr-row.is-winner') === chessWins, 'побед: ' + qa('#bracket-board .rr-row.is-winner'));
   $('[data-action="shuffle-bracket"]').click();
   check('shuffle держит раунды', qa('#bracket-board .rr-round') === C.rounds && $('#bracket-progress').textContent.trim() === '0 / ' + chessTotal, qa('#bracket-board .rr-round') + ' / ' + $('#bracket-progress').textContent);
 
@@ -443,13 +450,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.11\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.11\.1$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
   const cssSrc = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
   check('стили: полоса режима в HUD-стиле', /\.cloud-bar\{/.test(cssSrc) && /--cb-glow/.test(cssSrc) && /@keyframes cb-sweep/.test(cssSrc) && /\.cb-pill\.is-ok/.test(cssSrc) && /\.cloud-bar\[data-state="saving"\]/.test(cssSrc), 'HUD: кромка, блик, пилюля, прогресс');
   const rmBlock = (cssSrc.match(/@media \(prefers-reduced-motion: reduce\)\{[\s\S]*?\n\}/g) || []).filter((b) => /\.cloud-bar/.test(b))[0] || '';
   check('стили: анимации отключаются при reduced-motion', /\.cloud-bar/.test(rmBlock) && /animation:none/.test(rmBlock), rmBlock.replace(/\s+/g, ' ').slice(0, 60));
-  check('ассеты с версией', /styles\.css\?v=4\.11\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.11\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.11\.1/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.11\.1/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
