@@ -325,7 +325,7 @@
             <span class="select-wrap"><select class="select" id="bracket-select" aria-label="Дисциплина"></select></span>
             <div class="comp-actions" id="bracket-actions">
               <button class="btn btn-ghost btn-sm" type="button" data-action="auto-bracket" data-label='<span aria-hidden="true">⚡</span><span>Автопрогноз</span>'><span aria-hidden="true">⚡</span><span>Автопрогноз</span></button>
-              <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Пересобрать туры"><span aria-hidden="true">🔀</span><span>Туры</span></button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="shuffle-bracket" title="Пересобрать раунды"><span aria-hidden="true">🔀</span><span>Раунды</span></button>
               <button class="btn btn-glass btn-sm" type="button" data-action="reset-bracket" title="Сбросить результаты"><span aria-hidden="true">↺</span><span>Сброс</span></button>
               <div class="bracket-progress"><span class="bp-track"><i class="bp-fill" id="bracket-progress-fill" style="--w:0%"></i></span><span id="bracket-progress" aria-live="polite">0 / 15</span></div>
             </div>
@@ -340,20 +340,23 @@
         <div class="comp-brief" id="comp-brief"></div>
 
         <div id="bracket-body">
-          <div class="league-layout">
-            <div class="league-tours" id="bracket-board"></div>
-            <div class="league-side" role="region" aria-label="Турнирная таблица">
-              <div class="league-side-head"><b>Таблица</b><span>круговая</span></div>
-              <div class="league-table" id="league-table"></div>
-              <div class="league-note" id="league-note"></div>
-            </div>
+          <div class="rr-scroll" id="bracket-scroll">
+            <div class="rr-board" id="bracket-board"></div>
           </div>
           <div class="bracket-hint">
-            <span><b>Как это работает:</b> каждый играет с каждым один раз. Клик по участнику — победа в матче, повторный клик снимает выбор. Туры раскладываются автоматически.</span>
+            <span><b>Как это работает:</b> каждый играет с каждым один раз. Клик по бойцу — победа 1:0, повторный клик снимает результат. Раунды и таблица пересчитываются сразу.</span>
             <div class="bracket-legend">
-              <span><i class="legend-line"></i> победа</span>
-              <span><i class="legend-line dim"></i> ещё не сыграно</span>
+              <span><i class="legend-score is-win">1</i> победа</span>
+              <span><i class="legend-score">0</i> поражение</span>
+              <span><i class="legend-score is-dash">–</i> не сыграно</span>
             </div>
+          </div>
+          <div class="rr-standings" role="region" aria-label="Турнирная таблица">
+            <div class="rr-standings-head"><b>Таблица</b><span>круговая · каждый с каждым</span></div>
+            <div class="rr-table-wrap">
+              <table class="rr-table" id="league-table"></table>
+            </div>
+            <div class="league-note" id="league-note"></div>
           </div>
           <div class="champion-slot" id="champion-slot" aria-live="polite"></div>
         </div>
