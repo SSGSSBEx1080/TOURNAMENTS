@@ -490,9 +490,11 @@
         color: colors[Math.floor(Math.random() * colors.length)], life: 1
       });
     }
-    var start = performance.now();
+    var start = 0;
     function frame(now) {
-      var dt = Math.min(32, now - start) / 16.7;
+      if (!start) start = now;
+      var elapsed = Math.max(0, now - start);
+      var dt = Math.min(32, elapsed) / 16.7;
       confettiCtx.clearRect(0, 0, w, h);
       var alive = false;
       parts.forEach(function (p) {
@@ -501,12 +503,12 @@
         confettiCtx.save();
         confettiCtx.translate(p.x, p.y);
         confettiCtx.rotate(p.rot);
-        confettiCtx.globalAlpha = Math.max(0, 1 - (now - start) / 4200);
+        confettiCtx.globalAlpha = Math.max(0, 1 - elapsed / 4200);
         confettiCtx.fillStyle = p.color;
         confettiCtx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
         confettiCtx.restore();
       });
-      if (alive && now - start < 4200) requestAnimationFrame(frame);
+      if (alive && elapsed < 4200) requestAnimationFrame(frame);
       else confettiCtx.clearRect(0, 0, w, h);
     }
     requestAnimationFrame(frame);
@@ -2521,10 +2523,11 @@
       if (el.dataset.done) return;
       el.dataset.done = '1';
       var target = Number(el.getAttribute('data-count') || el.textContent || 0);
-      var start = performance.now();
+      var start = 0;
       var dur = 1100;
       function step(now) {
-        var k = Math.min(1, (now - start) / dur);
+        if (!start) start = now;
+        var k = Math.min(1, Math.max(0, (now - start) / dur));
         var eased = 1 - Math.pow(1 - k, 3);
         el.textContent = String(Math.round(target * eased));
         if (k < 1) requestAnimationFrame(step);
