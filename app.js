@@ -622,8 +622,18 @@
   function cloudMarkDirty(reason) {
     if (!cloudHasToken()) { if (CLOUD.status.mode === 'live') renderCloudUI(); return; }
     if (CLOUD.applying) return;
-    CLOUD.status.dirty = true;
     if (reason) cloudLog(reason);
+    /* Токен есть, но общий режим ещё не включён — не публикуем молча,
+       иначе сайт неожиданно закроется для всех на первом же клике. */
+    if (CLOUD.status.mode !== 'live') {
+      renderCloudUI();
+      if (!CLOUD.hinted) {
+        CLOUD.hinted = true;
+        toast('Пока видно только у тебя. Открой <b>🛡️ админку</b> и нажми «Включить общий режим», чтобы результаты увидели все.', '🔒');
+      }
+      return;
+    }
+    CLOUD.status.dirty = true;
     renderCloudUI();
     if (CLOUD.timer) clearTimeout(CLOUD.timer);
     CLOUD.timer = setTimeout(function () { CLOUD.timer = null; cloudPush(null, true); }, 900);
@@ -771,6 +781,7 @@
           '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-backup">Скачать бэкап</button>' +
           '<label class="btn btn-ghost btn-sm admin-upload">Загрузить бэкап<input type="file" id="cloud-import" accept="application/json,.json" hidden></label>' +
         '</div>' +
+        (cloudHasToken() && !cloudIsAdmin() ? '<div class="admin-warn">Изменения пока сохраняются только в этом браузере. Нажми «Включить общий режим», чтобы их увидели все.</div>' : '') +
         (CLOUD.status.error ? '<div class="admin-error">' + esc(CLOUD.status.error) + '</div>' : '') +
       '</div>' +
       '<div class="admin-block"><h4>Админы <span>' + CLOUD.admins.length + '</span></h4>' +
