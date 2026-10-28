@@ -1,11 +1,19 @@
 {
   "schema": 1,
   "mode": "setup",
-  "rev": 0,
-  "updatedAt": "",
-  "updatedBy": "",
-  "admins": [],
-  "log": [],
+  "rev": 1,
+  "updatedAt": "2026-10-28T19:31:24Z",
+  "updatedBy": "SSGSSBEx1080",
+  "admins": [
+    "SSGSSBEx1080"
+  ],
+  "log": [
+    {
+      "at": "2026-10-28T19:31:24Z",
+      "by": "SSGSSBEx1080",
+      "text": "проверка доступа: токен может писать"
+    }
+  ],
   "brackets": {},
   "boards": {},
   "roster": {}
