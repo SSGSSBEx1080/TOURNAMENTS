@@ -1,13 +1,18 @@
 {
   "schema": 1,
-  "mode": "setup",
-  "rev": 1,
-  "updatedAt": "2026-10-28T19:31:24Z",
+  "mode": "live",
+  "rev": 2,
+  "updatedAt": "2026-10-28T19:33:18Z",
   "updatedBy": "SSGSSBEx1080",
   "admins": [
     "SSGSSBEx1080"
   ],
   "log": [
+    {
+      "at": "2026-10-28T19:33:18Z",
+      "by": "SSGSSBEx1080",
+      "text": "включил общий режим"
+    },
     {
       "at": "2026-10-28T19:31:24Z",
       "by": "SSGSSBEx1080",
