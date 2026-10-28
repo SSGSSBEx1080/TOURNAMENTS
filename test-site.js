@@ -443,9 +443,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.8\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.8\.1$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.8\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.8\.1/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.1/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -504,6 +504,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('облако: клик зрителя заблокирован', qa('#bracket-board .rr-row.is-winner') === winRead, qa('#bracket-board .rr-row.is-winner'));
   $('#roster-inline .ri-chip:not(.is-on)').click();
   check('облако: состав зрителю недоступен', !window.GP.state.rosterEdits.p1, JSON.stringify(window.GP.state.rosterEdits));
+
+  // токен есть, но общий режим не включён — правки не публикуются молча
+  window.GP.cloud.setToken('test-token');
+  window.GP.cloud.setMode('local');
+  const beforeQuiet = qa('#bracket-board .rr-row.is-winner');
+  $$('#bracket-board .rr-row[data-entrant]')[2].click();
+  check('облако: без общего режима правка остаётся локальной', window.GP.cloud.status.mode === 'local', window.GP.cloud.status.mode);
 
   window.GP.cloud.setToken('test-token');
   $('[data-action="cloud-panel"]').click();
