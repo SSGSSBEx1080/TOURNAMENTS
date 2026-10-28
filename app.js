@@ -394,7 +394,9 @@
       syncing: false,
       error: '',
       checkedAt: 0,
-      dirty: false
+      dirty: false,
+      expires: '',
+      login: ''
     },
     admins: [],
     log: [],
@@ -403,6 +405,24 @@
     applying: false
   };
   var CLOUD_API = 'https://api.github.com';
+
+  function cloudExpiresText() {
+    var raw = CLOUD.status.expires;
+    if (!raw) return '';
+    var d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    var days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+    var when = clockShort(d.toISOString());
+    if (days <= 0) return 'срок истёк ' + when;
+    if (days === 1) return 'истекает завтра (' + when + ')';
+    if (days <= 7) return 'истекает через ' + days + ' ' + plural(days, ['день', 'дня', 'дней']) + ' (' + when + ')';
+    return 'действует до ' + when;
+  }
+  function cloudExpiresSoon() {
+    var d = new Date(CLOUD.status.expires || 0);
+    if (!CLOUD.status.expires || isNaN(d.getTime())) return false;
+    return d.getTime() - Date.now() < 7 * 86400000;
+  }
 
   function cloudLoadCfg() {
     try {
@@ -595,6 +615,10 @@
         });
       })
       .then(function (r) {
+        if (r.status === 401) throw new Error('токен истёк или отозван — создай новый в GitHub и вставь заново');
+        if (r.status === 403) throw new Error('у токена нет права Contents: read & write на этот репозиторий');
+        if (r.status === 404) throw new Error('репозиторий или файл недоступны токену');
+        if (r.status === 409) throw new Error('конфликт версий — нажми «Синхронизировать» ещё раз');
         if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120)); });
         /* локально сразу приводим состояние к опубликованному */
         CLOUD.status.rev = (CLOUD.status.rev || 0) + 1;
@@ -644,11 +668,17 @@
     if (!cloudReady()) return Promise.reject(new Error('нет fetch'));
     return fetch(CLOUD_API + '/user', { headers: cloudHeaders(true), cache: 'no-store' })
       .then(function (r) {
+        if (r.status === 401) throw new Error('токен истёк или отозван — создай новый');
         if (!r.ok) throw new Error('токен не принят (HTTP ' + r.status + ')');
+        try {
+          var exp = r.headers && r.headers.get && r.headers.get('github-authentication-token-expiration');
+          if (exp) CLOUD.status.expires = new Date(String(exp).replace(' UTC', 'Z').replace(' ', 'T')).toISOString();
+        } catch (e) { /* ignore */ }
         return r.json();
       })
       .then(function (u) {
         CLOUD.cfg.login = u.login || 'admin';
+        CLOUD.status.login = CLOUD.cfg.login;
         cloudSaveCfg();
         return fetch(cloudFileUrl(), { headers: cloudHeaders(true), cache: 'no-store' })
           .then(function (r) { return { perm: r.ok ? r.json() : null, status: r.status }; })
@@ -752,8 +782,12 @@
         '<button type="button" data-action="admin-remove" data-login="' + esc(a) + '" aria-label="Снять админа ' + esc(a) + '">×</button></span>';
     }).join('') : '<span class="admin-empty">Список пуст — добавь свой GitHub-логин, когда включишь общий режим.</span>';
     var tokenLine = cloudHasToken()
-      ? '<div class="admin-token"><b>Токен подключён</b><span>' + esc(CLOUD.cfg.login || 'не проверен') + ' · ' + esc(CLOUD.cfg.owner + '/' + CLOUD.cfg.repo) + '</span>' +
-        '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-logout">Выйти</button></div>'
+      ? '<div class="admin-token"><b>Токен подключён</b><span>' + esc(CLOUD.cfg.login || 'не проверен') + ' · ' + esc(CLOUD.cfg.owner + '/' + CLOUD.cfg.repo) +
+          (cloudExpiresText() ? '<br><i class="admin-exp' + (cloudExpiresSoon() ? ' is-soon' : '') + '">' + esc(cloudExpiresText()) + '</i>' : '') +
+        '</span>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-logout">Выйти</button></div>' +
+        (cloudExpiresSoon() ? '<div class="admin-warn">Токен скоро закончится' + (cloudExpiresText() ? ' (' + esc(cloudExpiresText()) + ')' : '') +
+          '. Создай новый с датой подольше и вставь заново — иначе сайт перестанет принимать твои правки.</div>' : '')
       : '<label class="admin-field"><span>Токен администратора (GitHub)</span>' +
         '<input type="password" id="cloud-token" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>' +
         '<div class="admin-hint">Токен хранится только в этом браузере и уходит исключительно на <b>api.github.com</b>. В код сайта он не попадает — посетители его не видят.</div>';
@@ -843,6 +877,7 @@
 
   function cloudStatusText() {
     if (CLOUD.status.syncing) return 'сохраняю…';
+    if (CLOUD.status.error && /истёк|отозван/.test(CLOUD.status.error)) return 'токен истёк — нужен новый';
     if (cloudIsAdmin()) {
       return 'общие результаты · обновлено ' + clockShort(CLOUD.status.updatedAt) + (CLOUD.status.dirty ? ' · есть несохранённое' : '');
     }

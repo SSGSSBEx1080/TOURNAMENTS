@@ -1817,3 +1817,5 @@ body.is-readonly .rr-match:hover{border-color:var(--line)}
 .admin-help p{margin:8px 0 0;font-size:.62rem;line-height:1.55;color:var(--faint)}
 .admin-warn{margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(243,205,124,.36);background:rgba(243,205,124,.1);color:var(--gold-3);font-size:.66rem;font-weight:700;line-height:1.5}
 [data-theme="light"] .admin-warn{color:var(--gold-2)}
+.admin-exp{font-style:normal;font-size:.62rem;font-weight:800;color:var(--muted)}
+.admin-exp.is-soon{color:#ffb3ba}

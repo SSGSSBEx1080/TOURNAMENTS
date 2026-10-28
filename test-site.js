@@ -443,9 +443,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.8\.1$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.8\.2$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.8\.1/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.1/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.8\.2/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.2/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -518,6 +518,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('админка: инструкция по токену', /personal-access-tokens/.test($('#modal-body').innerHTML) && qa('#modal-body .admin-help li') === 6, qa('#modal-body .admin-help li'));
   window.GP.cloud.addAdmin('friend-login');
   check('админка: назначение админа', window.GP.cloud.admins().indexOf('friend-login') >= 0, window.GP.cloud.admins().join(','));
+  window.GP.cloud.status.expires = new Date(Date.now() + 2 * 86400000).toISOString();
+  $('[data-action="cloud-panel"]').click();
+  check('админка: предупреждает о скором истечении токена', /скоро закончится/.test($('#modal-body').textContent) && !!$('#modal-body .admin-exp'), ($('#modal-body .admin-exp') || {}).textContent || 'нет');
+  window.GP.cloud.status.expires = new Date(Date.now() + 200 * 86400000).toISOString();
+  $('[data-action="cloud-panel"]').click();
+  check('админка: срок действия показан', /действует до/.test($('#modal-body').textContent) && !/скоро закончится/.test($('#modal-body').textContent), ($('#modal-body .admin-exp') || {}).textContent || 'нет');
+  window.GP.cloud.status.expires = '';
   check('админка: журнал пишет', window.GP.cloud.log().length > 0, window.GP.cloud.log()[0].text);
   $('#modal-close').click();
   window.GP.cloud.setToken('');
