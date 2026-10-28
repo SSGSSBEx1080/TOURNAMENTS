@@ -443,9 +443,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.7\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.7\.1$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.7\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.7\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.7\.1/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.7\.1/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+
+  // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
+  const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
+  check('счётчики без минуса', pulseNums.every((t) => /^\d+$/.test(t)), pulseNums.join(' '));
+  check('счётчик бойцов = состав', $('#mini-registrations-2') && qa('#roster-grid .player-card') >= 8, qa('#roster-grid .player-card'));
 
   // ── theme ──────────────────────────────────────────────────────────
   const themeBefore = document.documentElement.getAttribute('data-theme');

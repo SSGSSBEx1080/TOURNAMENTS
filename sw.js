@@ -1,8 +1,8 @@
-/* GAMEpiada · service worker v4.7 (esports arena · сеть в приоритете, правка состава)
+/* GAMEpiada · service worker v4.7.1 (esports arena · сеть в приоритете, правка состава)
    Стратегия: навигация и JS/CSS — network-first (обновления приезжают сразу),
    картинки — cache-first, офлайн — из кеша.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.7.0';
+const VERSION = 'gamepiada-v4.7.1';
 const CORE = [
   './',
   './index.html',
