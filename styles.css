@@ -552,23 +552,7 @@ body.is-muted .icon-btn .off{display:block}
 .bracket-progress{display:flex;align-items:center;gap:9px;font-size:.72rem;color:var(--muted);font-weight:700;margin-left:auto}
 .bp-track{width:88px;height:5px;border-radius:99px;background:var(--glass-hi);border:1px solid var(--line);overflow:hidden}
 .bp-fill{display:block;height:100%;width:var(--w,0%);background:var(--grad-gold);transition:width .5s var(--ease);border-radius:inherit}
-.bracket-scroll{
-  position:relative;overflow-x:auto;overflow-y:hidden;padding:22px 16px 16px;
-  border-radius:18px;border:1px solid var(--line);
-  background:radial-gradient(110% 120% at 50% 0%,rgba(243,205,124,.055),transparent 60%),rgba(3,6,13,.35);
-  scrollbar-width:thin;scrollbar-color:rgba(243,205,124,.45) transparent;
-}
-[data-theme="light"] .bracket-scroll{background:radial-gradient(110% 120% at 50% 0%,rgba(243,205,124,.16),transparent 60%),rgba(255,255,255,.42)}
-.bracket-scroll::-webkit-scrollbar{height:8px}
-.bracket-scroll::-webkit-scrollbar-thumb{background:rgba(243,205,124,.35);border-radius:99px}
-.bracket{position:relative;display:flex;gap:clamp(26px,4.5vw,58px);min-width:max-content;padding:4px 2px}
-.bracket-lines{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:0}
-.bracket-path{fill:none;stroke:rgba(154,175,225,.2);stroke-width:1.5}
-.bracket-path.is-win{stroke:rgba(243,205,124,.7);stroke-width:2;filter:drop-shadow(0 0 4px rgba(243,205,124,.35))}
-.bracket-round{position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;min-width:216px}
-.round-label{display:flex;align-items:center;gap:7px;font-family:var(--font-d);font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:0 2px 4px}
-.round-label::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
-.round-matches{display:flex;flex-direction:column;justify-content:space-around;gap:16px;flex:1}
+
 .match{
   position:relative;border:1px solid var(--line);border-radius:13px;overflow:hidden;
   background:linear-gradient(160deg,var(--glass-2),var(--glass));
@@ -1009,7 +993,7 @@ body.is-muted .icon-btn .off{display:block}
   .schedule-side{grid-template-columns:1fr 1fr}
   .stats-side{grid-template-columns:1fr}
   .disc-grid{grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
-  .bracket-round{min-width:196px}
+
 }
 @media (max-width:760px){
   :root{--nav-h:66px}
@@ -1059,8 +1043,7 @@ body.is-muted .icon-btn .off{display:block}
   .bracket-controls .select-wrap,.bracket-controls .select{flex:1;max-width:none}
   .bracket-controls .btn{padding:.55rem .65rem;font-size:.68rem}
   .bracket-progress{display:none}
-  .bracket-scroll{padding:16px 10px 12px}
-  .bracket-round{min-width:172px}
+
   .match-row{padding:7px}
   .match-name{font-size:.72rem}
   .champion-card{flex-wrap:wrap}
@@ -1225,27 +1208,6 @@ h1,h2,.title-row{text-wrap:balance}
 .tbd-chip{display:inline-flex;align-items:center;padding:.28rem .5rem;border-radius:6px;font-size:.62rem;font-weight:700;color:var(--gold-3);border:1px dashed rgba(243,205,124,.4);background:rgba(243,205,124,.07)}
 [data-theme="light"] .tbd-chip{color:var(--gold-2)}
 
-/* сетка */
-.bracket-scroll{
-  position:relative;overflow-x:auto;overflow-y:hidden;padding:20px 14px 14px;border-radius:14px;
-  border:1px solid var(--line);
-  background:
-    radial-gradient(90% 130% at 0% 0%,rgba(53,224,255,.06),transparent 60%),
-    radial-gradient(90% 130% at 100% 0%,rgba(139,123,255,.06),transparent 60%),
-    rgba(3,6,13,.55);
-  scrollbar-width:thin;scrollbar-color:rgba(53,224,255,.4) transparent;
-}
-[data-theme="light"] .bracket-scroll{background:rgba(255,255,255,.5)}
-.bracket-scroll::-webkit-scrollbar{height:7px}
-.bracket-scroll::-webkit-scrollbar-thumb{background:rgba(53,224,255,.3);border-radius:99px}
-.bracket{position:relative;display:flex;gap:clamp(22px,3.6vw,48px);min-width:max-content;padding:4px 2px}
-.bracket-lines{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:0}
-.bracket-path{fill:none;stroke:rgba(126,158,214,.22);stroke-width:1.5}
-.bracket-path.is-win{stroke:rgba(53,224,255,.75);stroke-width:2;filter:drop-shadow(0 0 3px rgba(53,224,255,.35))}
-.bracket-round{position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;min-width:214px}
-.round-label{display:flex;align-items:center;gap:7px;font-family:var(--font-d);font-size:.56rem;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);padding:0 2px 4px}
-.round-label::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line-2),transparent)}
-.round-matches{display:flex;flex-direction:column;justify-content:space-around;gap:14px;flex:1}
 .match{
   position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;
   background:linear-gradient(160deg,rgba(16,26,44,.9),rgba(7,11,21,.9));
@@ -1544,3 +1506,107 @@ body.is-idle .eyebrow .pulse{animation-play-state:paused}
 .match-row.is-waiting:hover{background:none}
 .match-row.is-waiting .match-name{color:var(--muted);font-weight:600}
 .match-row.is-waiting .match-score{display:none}
+
+/* ═══════════ 27 · круговая система: туры + таблица ═════════════════════ */
+.league-layout{
+  display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;align-items:start;position:relative;z-index:1;
+}
+.league-tours{
+  display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));align-content:start;
+}
+.tour-card{
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:linear-gradient(170deg,rgba(16,26,44,.9),rgba(7,11,21,.92));
+  transition:border-color .25s,box-shadow .25s;
+}
+[data-theme="light"] .tour-card{background:linear-gradient(170deg,#fff,#f8f5ed)}
+.tour-card.is-done{border-color:rgba(53,224,255,.34);box-shadow:0 14px 32px -26px rgba(53,224,255,.8)}
+.tour-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+  padding:9px 11px;border-bottom:1px solid var(--line);
+}
+.tour-head b{font-family:var(--font-d);font-size:.78rem;letter-spacing:-.01em}
+.tour-count{font-size:.6rem;font-weight:800;color:var(--faint);font-variant-numeric:tabular-nums}
+.tour-card.is-done .tour-count{color:var(--cyan)}
+.tour-matches{display:grid}
+.tour-matches .match{border:0;border-radius:0;background:none;box-shadow:none;animation:none}
+.tour-matches .match + .match{border-top:1px solid var(--line)}
+.tour-matches .match.is-decided{background:rgba(53,224,255,.045)}
+.tour-matches .match .match-row{padding:7px 9px}
+
+/* таблица */
+.league-side{
+  position:relative;
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(12,20,36,.92),rgba(5,9,17,.94));
+}
+[data-theme="light"] .league-side{background:linear-gradient(180deg,#fff,#faf7ef)}
+.league-side-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+  padding:10px 11px;border-bottom:1px solid var(--line);
+}
+.league-side-head b{font-family:var(--font-d);font-size:.82rem}
+.league-side-head span{font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:800}
+.league-table{display:grid}
+.league-row{
+  display:grid;grid-template-columns:24px minmax(0,1fr) 20px 20px 20px 28px;align-items:center;gap:6px;
+  padding:7px 10px;font-size:.72rem;border:0;border-top:1px solid var(--line);
+  background:none;color:inherit;font-family:inherit;text-align:left;width:100%;
+  transition:background .18s;
+}
+.league-row:first-child{border-top:0}
+.league-row.is-head{
+  cursor:default;border-top:0;padding:7px 10px 6px;
+  font-size:.54rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:800;
+}
+.league-row.is-head .lr-name{font-size:.54rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:800}
+.league-row[data-player]{cursor:pointer}
+.league-row[data-player]:hover{background:rgba(53,224,255,.07)}
+.league-row.is-podium.place-1{background:linear-gradient(90deg,rgba(243,205,124,.12),transparent 70%)}
+.league-row.is-podium.place-2{background:linear-gradient(90deg,rgba(200,215,240,.08),transparent 70%)}
+.league-row.is-podium.place-3{background:linear-gradient(90deg,rgba(240,195,154,.08),transparent 70%)}
+.league-row.is-champion{box-shadow:inset 2px 0 0 var(--gold)}
+.lr-rank{font-family:var(--font-d);font-size:.64rem;color:var(--faint);font-variant-numeric:tabular-nums;text-align:center}
+.league-row.is-podium.place-1 .lr-rank{color:var(--gold)}
+.lr-name{display:flex;align-items:center;gap:3px;min-width:0}
+.lr-name .avatar{width:20px;height:20px;font-size:.48rem;margin-right:-6px;flex:none}
+.lr-name b{font-size:.72rem;font-weight:700;margin-left:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lr-games,.lr-wins,.lr-losses,.lr-points{text-align:center;font-variant-numeric:tabular-nums;font-size:.68rem;color:var(--muted);font-weight:700}
+.lr-wins{color:var(--ink)}
+.lr-points{color:var(--cyan);font-weight:800}
+.league-row.is-podium.place-1 .lr-points{color:var(--gold)}
+.league-note{display:grid;gap:4px;padding:10px 11px;border-top:1px solid var(--line);font-size:.64rem;color:var(--faint);line-height:1.45}
+.league-note b{color:var(--ink-2);font-weight:800}
+.league-note span{color:var(--faint)}
+.league-empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:.8rem;grid-column:1/-1;border:1px dashed var(--line-2);border-radius:12px}
+
+@media (max-width:980px){
+  .league-layout{grid-template-columns:1fr}
+  .league-side{position:static;order:-1}
+  .league-tours{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+}
+@media (max-width:560px){
+  .league-tours{grid-template-columns:1fr}
+  .league-row{grid-template-columns:22px minmax(0,1fr) 18px 18px 18px 26px;gap:4px;padding:7px 8px}
+}
+.tour-matches .match-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.champion-card.is-live{border-color:rgba(53,224,255,.36);background:linear-gradient(100deg,rgba(53,224,255,.12),rgba(139,123,255,.08) 62%,rgba(255,255,255,.03))}
+.champion-card.is-live .champ-label{color:var(--cyan)}
+.champion-card.is-live .champ-crown{filter:drop-shadow(0 0 10px rgba(53,224,255,.55))}
+.champion-card.is-final{animation:champ-glow 3.4s ease-in-out infinite}
+@keyframes champ-glow{50%{box-shadow:0 22px 54px -30px rgba(243,205,124,.9),inset 0 1px 0 rgba(255,255,255,.18)}}
+.league-row.is-played .lr-name b{color:var(--ink)}
+.league-row:not(.is-played) .lr-name b{color:var(--muted)}
+.league-row.is-champion .lr-name b{color:var(--gold-3)}
+[data-theme="light"] .league-row.is-champion .lr-name b{color:var(--gold)}
+.league-row:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+.tour-card:hover{border-color:rgba(53,224,255,.28)}
+.tour-card.is-done .tour-count::after{content:" ✓";color:var(--cyan)}
+.tour-card.is-done .tour-head b{color:var(--cyan)}
+.league-row.is-podium.place-2 .lr-rank{color:#c8d7f0}
+.league-row.is-podium.place-3 .lr-rank{color:#f0c39a}
+.league-row:not(.is-head):nth-child(odd){background:rgba(255,255,255,.018)}
+[data-theme="light"] .league-row:not(.is-head):nth-child(odd){background:rgba(20,30,50,.02)}
+.league-row.is-podium.place-1{background:linear-gradient(90deg,rgba(243,205,124,.12),transparent 70%)}
+.league-row.is-podium.place-2{background:linear-gradient(90deg,rgba(200,215,240,.09),transparent 70%)}
+.league-row.is-podium.place-3{background:linear-gradient(90deg,rgba(240,195,154,.09),transparent 70%)}

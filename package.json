@@ -1,8 +1,8 @@
 {
   "name": "gamepiada-tournaments",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "private": true,
-  "description": "GAMEpiada · Esports Arena — статический сайт турнира: слоты вместо дат, сетки и заезды-подиумы по регламенту, дуо-синергия и live-данные из Google Таблицы.",
+  "description": "GAMEpiada · Esports Arena — статический сайт турнира: слоты вместо дат, круговые турниры «каждый с каждым», заезды-подиумы по регламенту, дуо-синергия и live-данные из Google Таблицы.",
   "homepage": "https://ssgssbex1080.github.io/TOURNAMENTS/",
   "repository": {
     "type": "git",
