@@ -1,7 +1,7 @@
-/* GAMEpiada · service worker v4.1 (esports arena · слоты вместо дат, арт-фоны турниров)
+/* GAMEpiada · service worker v4.2 (esports arena · слоты вместо дат, круговые турниры)
    Стратегия: навигация — network-first, статика — stale-while-revalidate.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.1.0';
+const VERSION = 'gamepiada-v4.2.0';
 const CORE = [
   './',
   './index.html',

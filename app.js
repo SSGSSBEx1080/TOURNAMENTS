@@ -1,6 +1,6 @@
 /* ==========================================================================
    GAMEpiada · Celestial Arena — app v3
-   Vanilla JS: рендер, фильтры, сетки, дуо-синергия, статистика,
+   Vanilla JS: рендер, фильтры, круговые таблицы, дуо-синергия, статистика,
    Google Sheets (gviz JSONP), палитра, темы, звук, эффекты.
    ========================================================================== */
 (function () {
@@ -21,7 +21,7 @@
     likes: 'gamepiada-likes-v3',
     sound: 'gamepiada-sound',
     duo: 'gamepiada-duo',
-    brackets: 'gamepiada-brackets-v4',
+    brackets: 'gamepiada-league-v5',
     bracketId: 'gamepiada-bracket-id',
     boards: 'gamepiada-boards-v4'
   };
@@ -119,7 +119,6 @@
   function compOf(d) { return (d && d.comp) || {}; }
   function isBoard(d) { return compOf(d).kind === 'board'; }
   function seriesOf(d) { return compOf(d).series || d.bo || '—'; }
-  function seatLabel(d) { return (compOf(d).seats || 1) > 1 ? '2×2' : '1×1'; }
   function durationLabel(d) {
     var m = d.duration || 0;
     if (!m) return '—';
@@ -513,7 +512,7 @@
         '<div class="disc-top"><span class="disc-icon" aria-hidden="true">' + d.icon + '</span>' +
         '<span class="disc-status ' + badge.cls + '">' + badge.text + '</span></div>' +
         '<div class="disc-name">' + esc(d.name) + '<span>' + esc(d.mode) + '</span></div>' +
-        '<div class="disc-meta"><span class="tag">~' + d.time + ' MSK</span><span class="tag">' + esc(isBoard(d) ? 'заезд' : seatLabel(d)) + '</span><span class="tag is-gold">' + esc(isBoard(d) ? pointsLabel(d) : seriesOf(d)) + '</span></div>' +
+        '<div class="disc-meta"><span class="tag">~' + d.time + ' MSK</span><span class="tag">' + esc(isBoard(d) ? 'заезд' : 'круговая') + '</span><span class="tag is-gold">' + esc(isBoard(d) ? pointsLabel(d) : seriesOf(d)) + '</span></div>' +
         '<div class="disc-foot"><div class="disc-avatars">' + avatars + '</div><span class="disc-count">' + list.length + ' / ' + state.players.length + '</span>' +
         '<span class="disc-cta">Открыть <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>' +
         '</article>';
@@ -537,96 +536,127 @@
 
   /* ─────────────────────────── bracket ─────────────────────────── */
 
-  function roundLabel(count) {
-    if (count === 1) return 'Финал';
-    if (count === 2) return 'Полуфинал';
-    if (count === 4) return '1/4 финала';
-    if (count === 8) return '1/8 финала';
-    return 'Раунд ' + count;
+  /* ─────────────────────────── круговая система ───────────────────────────
+     Каждый участник играет с каждым ровно один раз. Пары раскладываются
+     методом круга: первый остаётся на месте, остальные проворачиваются,
+     поэтому получается ровно N−1 туров без повторов и лишних матчей. */
+
+  function tourLabel(index) {
+    return 'Тур ' + (index + 1);
   }
 
-  /* Пулы и результаты живут на ключах участников (команда 2×2 — один ключ). */
-  function buildRounds(d) {
+  function buildTours(d) {
     var st = bracketState(d.id);
     var pool = entrants(d).map(function (e) { return e.key; });
-    if (!pool.length) return [[{ a: null, b: null, winner: null }]];
-    var size = 2;
-    while (size < Math.max(2, pool.length)) size *= 2;
-    var byes = size - pool.length;
-    var order = seededShuffle(pool, st.seed);
-    var first = [];
-    /* пустые слоты (bye) всегда в паре с участником — без «null vs null» */
-    for (var b = 0; b < byes; b++) {
-      var solo = order.pop();
-      first.push(b % 2 ? { a: solo, b: null, winner: null } : { a: null, b: solo, winner: null });
+    if (pool.length < 2) return [];
+    var slots = seededShuffle(pool, st.seed);
+    if (slots.length % 2) slots.push(null);
+    var n = slots.length, tours = [];
+    for (var t = 0; t < n - 1; t++) {
+      var matches = [];
+      for (var i = 0; i < n / 2; i++) {
+        var a = slots[i], b = slots[n - 1 - i];
+        if (a && b) matches.push({ a: a, b: b, winner: null });
+      }
+      tours.push(matches);
+      slots = [slots[0], slots[n - 1]].concat(slots.slice(1, n - 1));
     }
-    while (order.length) first.push({ a: order.pop() || null, b: order.pop() || null, winner: null });
-    first = seededShuffle(first, (st.seed ^ 0x9e3779b9) >>> 0);
-    var rounds = [first];
-    while (rounds[rounds.length - 1].length > 1) {
-      var prev = rounds[rounds.length - 1], next = [];
-      for (var j = 0; j < prev.length; j += 2) next.push({ a: null, b: null, winner: null });
-      rounds.push(next);
-    }
-    rounds.forEach(function (matches, r) {
+    tours.forEach(function (matches, t) {
       matches.forEach(function (m, i) {
-        if (r > 0) {
-          var pa = rounds[r - 1][i * 2], pb = rounds[r - 1][i * 2 + 1];
-          m.a = pa ? pa.winner : null;
-          m.b = pb ? pb.winner : null;
-        }
-        /* BYE авто-проходит только в первом раунде: дальше пустой слот —
-           это ещё не сыгранный матч, а не свободная путёвка. */
-        if (r === 0 && m.a && !m.b) m.winner = m.a;
-        else if (r === 0 && !m.a && m.b) m.winner = m.b;
-        else if (m.a && m.b) {
-          var pick = st.winners[r + '-' + i];
-          if (pick === m.a || pick === m.b) m.winner = pick;
-        }
+        var pick = st.winners[t + '-' + i];
+        if (pick === m.a || pick === m.b) m.winner = pick;
       });
     });
-    return rounds;
+    return tours;
   }
 
-  function matchRow(d, m, r, i, seed) {
-    /* В первом раунде матч с одним участником — это bye: путёвка выдаётся
-       автоматически, кликать нечего. В следующих раундах «один участник» —
-       это ещё не сыгранный предыдущий матч, ждём соперника. */
-    var bye = r === 0 && (!!(m.a && !m.b) || !!(!m.a && m.b));
-    var waiting = !bye && (!!(m.a && !m.b) || !!(!m.a && m.b));
-    return [m.a, m.b].map(function (key, side) {
-      var e = key ? entrantByKey(d, key) : null;
-      var win = key && m.winner === key;
-      if (!e) {
-        return '<div class="match-row is-empty"><span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
-          '<span class="match-name">' + (bye ? 'свободно' : 'Ожидание') + '</span>' +
-          '<span class="match-bye"></span></div>';
+  function leagueTotals(tours) {
+    var total = 0, decided = 0;
+    tours.forEach(function (matches) {
+      matches.forEach(function (m) {
+        if (!m.a || !m.b) return;
+        total++;
+        if (m.winner) decided++;
+      });
+    });
+    return { total: total, decided: decided, complete: total > 0 && decided === total };
+  }
+
+  /* Тай-брейк при равенстве побед — мини-таблица личных встреч внутри группы. */
+  function miniTable(tours, group) {
+    var inside = {}, score = {};
+    group.forEach(function (row) { inside[row.key] = true; score[row.key] = 0; });
+    tours.forEach(function (matches) {
+      matches.forEach(function (m) {
+        if (!m.winner || !inside[m.a] || !inside[m.b]) return;
+        score[m.winner] += 1;
+      });
+    });
+    return score;
+  }
+
+  function leagueStandings(d, tours) {
+    var byKey = {}, rows = [];
+    entrants(d).forEach(function (e) {
+      var row = { key: e.key, entrant: e, played: 0, wins: 0, losses: 0, points: 0 };
+      byKey[e.key] = row;
+      rows.push(row);
+    });
+    tours.forEach(function (matches) {
+      matches.forEach(function (m) {
+        if (!m.winner) return;
+        var win = byKey[m.winner];
+        var lose = byKey[m.winner === m.a ? m.b : m.a];
+        if (!win || !lose) return;
+        win.wins++; win.played++;
+        lose.losses++; lose.played++;
+      });
+    });
+    rows.forEach(function (row) { row.points = row.wins; });
+    rows.sort(function (x, y) { return y.points - x.points; });
+    var mark = 0;
+    while (mark < rows.length) {
+      var stop = mark;
+      while (stop < rows.length && rows[stop].points === rows[mark].points) stop++;
+      if (stop - mark > 1) {
+        var group = rows.slice(mark, stop);
+        var score = miniTable(tours, group);
+        group.sort(function (x, y) {
+          if (score[y.key] !== score[x.key]) return score[y.key] - score[x.key];
+          var sx = x.entrant.strength || 0, sy = y.entrant.strength || 0;
+          if (sy !== sx) return sy - sx;
+          return String(x.entrant.label).localeCompare(String(y.entrant.label), 'ru');
+        });
+        rows = rows.slice(0, mark).concat(group, rows.slice(stop));
       }
+      mark = stop;
+    }
+    rows.forEach(function (row, i) { row.place = i + 1; });
+    return rows;
+  }
+
+  function matchRow(d, m, t, i) {
+    /* В круговой у каждого матча ровно два участника: ни bye, ни ожидания нет. */
+    return [m.a, m.b].map(function (key) {
+      var e = entrantByKey(d, key) || { key: key, label: key, players: [] };
       var first = e.players[0] || {};
-      var inner = '<span class="match-seed">' + (side === 0 ? seed : seed + 1) + '</span>' +
+      var win = m.winner === key;
+      return '<button class="match-row' + (win ? ' is-winner' : '') + (e.team ? ' is-team' : '') + '" type="button"' +
+        ' data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + t + '-' + i + '"' +
+        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' +
         '<span class="match-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
-        (bye
-          ? '<span class="match-bye" title="Проход без соперника">bye</span>'
-          : '<span class="match-score" aria-hidden="true">✓</span>');
-      if (bye) {
-        return '<div class="match-row is-winner is-auto" title="' + esc(e.label) + ' — проходит без соперника">' + inner + '</div>';
-      }
-      if (waiting) {
-        return '<div class="match-row is-waiting" title="' + esc(e.label) + ' — ждёт соперника из предыдущего раунда">' + inner + '</div>';
-      }
-      return '<button class="match-row' + (win ? ' is-winner' : '') + (e.team ? ' is-team' : '') + '" type="button" data-entrant="' + esc(e.key) + '"' +
-        ' data-player="' + esc(first.id || '') + '" data-key="' + r + '-' + i + '"' +
-        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' + inner + '</button>';
+        '<span class="match-score" aria-hidden="true">✓</span></button>';
     }).join('');
   }
 
   function compBriefHtml(d) {
     var c = compOf(d);
     var pts = (c.seats || 1) > 1 ? '1,5 / 1 / 0,5' : '3 / 2 / 1';
-    var rows = (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('');
+    var system = isBoard(d) ? '' : '<li><b>Круговая система:</b> каждый играет с каждым один раз; победа = 1 очко в таблице.</li>';
+    var rows = system + (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('');
     var tbd = (c.tbd || []).map(function (t) { return '<span class="tbd-chip">' + esc(t) + '</span>'; }).join('');
     return '<div class="cp-grid">' +
-        '<div class="cp-cell"><small>формат</small><b>' + (isBoard(d) ? 'заезд · общий зачёт' : (c.seats > 1 ? 'команды 2×2' : 'дуэль 1×1')) + '</b></div>' +
+        '<div class="cp-cell"><small>формат</small><b>' + (isBoard(d) ? 'заезд · общий зачёт' : (c.seats > 1 ? 'круговая 2×2' : 'круговая 1×1')) + '</b></div>' +
         '<div class="cp-cell"><small>' + (isBoard(d) ? 'метрика' : 'серия') + '</small><b>' + esc(isBoard(d) ? (c.metric || '—') : (c.seriesNote || seriesOf(d))) + '</b></div>' +
         '<div class="cp-cell"><small>победа</small><b>' + esc(c.win || '—') + '</b></div>' +
         '<div class="cp-cell"><small>очки за места</small><b>' + pts + '</b></div>' +
@@ -641,11 +671,11 @@
     var c = compOf(d);
     var list = entrants(d);
     var title = $('#bracket-title');
-    if (title) title.textContent = (isBoard(d) ? 'Заезд · ' : 'Сетка · ') + d.name + ' · ' + d.mode;
+    if (title) title.textContent = (isBoard(d) ? 'Заезд · ' : 'Круговая · ') + d.name + ' · ' + d.mode;
     var meta = $('#bracket-meta');
     if (meta) {
       meta.innerHTML = '<span class="tag"><b>слот ' + d.order + '</b> · ~' + d.time + ' MSK</span>' +
-        '<span class="tag">' + esc(isBoard(d) ? 'общий зачёт' : seatLabel(d)) + '</span>' +
+        '<span class="tag">' + esc(isBoard(d) ? 'общий зачёт' : 'каждый с каждым') + '</span>' +
         '<span class="tag is-gold">' + esc(isBoard(d) ? 'места 1–3' : seriesOf(d)) + '</span>' +
         '<span class="tag">' + list.length + ' ' + plural(list.length, [c.seats > 1 ? 'команда' : 'боец', c.seats > 1 ? 'команды' : 'бойца', c.seats > 1 ? 'команд' : 'бойцов']) + '</span>';
     }
@@ -660,70 +690,62 @@
     if (brief) brief.innerHTML = compBriefHtml(d);
   }
 
-  function renderBracket(d) {
+  function renderLeague(d) {
     d = d || discById(state.bracketId) || queue()[0];
     if (!d) return;
-    var rounds = buildRounds(d);
-    var board = $('#bracket-board');
-    if (!board) return;
-    $$('.bracket-round', board).forEach(function (el) { el.parentNode.removeChild(el); });
-    var lines = $('#bracket-lines');
-    if (lines) lines.innerHTML = '';
-    rounds.forEach(function (matches, r) {
-      var wrap = document.createElement('div');
-      wrap.className = 'bracket-round';
-      wrap.setAttribute('data-round', r);
-      var html = '<div class="round-label">' + roundLabel(matches.length) +
-        '<small>' + esc(seriesOf(d)) + '</small></div><div class="round-matches">';
-      matches.forEach(function (m, i) {
-        var seed = i * 2 + 1;
-        html += '<div class="match' + (m.a && m.b ? '' : ' is-bye') + '" data-key="' + r + '-' + i + '">' + matchRow(d, m, r, i, seed) + '</div>';
-      });
-      html += '</div>';
-      wrap.innerHTML = html;
-      board.appendChild(wrap);
-    });
-    var playable = 0, decided = 0;
-    rounds.forEach(function (matches) {
-      matches.forEach(function (m) {
-        if (m.a && m.b) { playable++; if (m.winner) decided++; }
-      });
-    });
-    /* знаменатель — сколько матчей нужно сыграть (n−1), а не сколько заполнено */
-    var expected = Math.max(1, entrants(d).length - 1);
-    var prog = $('#bracket-progress'), fill = $('#bracket-progress-fill');
-    if (prog) prog.textContent = decided + ' / ' + expected;
-    if (fill) fill.style.setProperty('--w', Math.round(decided / expected * 100) + '%');
-    requestAnimationFrame(function () { drawBracketLines(rounds); });
-  }
+    var host = $('#bracket-board');
+    if (!host) return;
+    var tours = buildTours(d);
+    var rows = leagueStandings(d, tours);
+    var totals = leagueTotals(tours);
 
-  function drawBracketLines(rounds) {
-    var board = $('#bracket-board');
-    var svg = $('#bracket-lines');
-    if (!board || !svg) return;
-    var br = board.getBoundingClientRect();
-    var width = board.scrollWidth, height = board.scrollHeight;
-    svg.setAttribute('width', width);
-    svg.setAttribute('height', height);
-    svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
-    svg.style.width = width + 'px';
-    svg.style.height = height + 'px';
-    var paths = [];
-    rounds.forEach(function (matches, r) {
-      if (r >= rounds.length - 1) return;
-      matches.forEach(function (m, i) {
-        var el = $('.match[data-key="' + r + '-' + i + '"]', board);
-        var next = $('.match[data-key="' + (r + 1) + '-' + Math.floor(i / 2) + '"]', board);
-        if (!el || !next) return;
-        var a = el.getBoundingClientRect(), b = next.getBoundingClientRect();
-        var x1 = a.right - br.left, y1 = a.top + a.height / 2 - br.top;
-        var x2 = b.left - br.left, y2 = b.top + b.height / 2 - br.top;
-        var mid = x1 + Math.max(12, (x2 - x1) / 2);
-        var path = 'M' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' H' + mid.toFixed(1) + ' V' + y2.toFixed(1) + ' H' + x2.toFixed(1);
-        paths.push('<path class="bracket-path' + (m.winner ? ' is-win' : '') + '" d="' + path + '"/>');
-      });
-    });
-    svg.innerHTML = paths.join('');
+    if (!tours.length) {
+      host.innerHTML = '<div class="league-empty">Нужно хотя бы два участника — на эту дисциплину пока мало заявок.</div>';
+    } else {
+      host.innerHTML = tours.map(function (matches, t) {
+        var done = matches.filter(function (m) { return !!m.winner; }).length;
+        return '<section class="tour-card' + (done === matches.length ? ' is-done' : '') + '" data-tour="' + t + '">' +
+          '<header class="tour-head"><b>' + tourLabel(t) + '</b>' +
+          '<span class="tour-count">' + done + ' / ' + matches.length + '</span></header>' +
+          '<div class="tour-matches">' + matches.map(function (m, i) {
+            return '<div class="match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
+              matchRow(d, m, t, i) + '</div>';
+          }).join('') + '</div></section>';
+      }).join('');
+    }
+
+    var table = $('#league-table');
+    if (table) {
+      var head = '<div class="league-row is-head"><span class="lr-rank">#</span><span class="lr-name">участник</span>' +
+        '<span class="lr-games" title="игр">И</span><span class="lr-wins" title="победы">В</span>' +
+        '<span class="lr-losses" title="поражения">П</span><span class="lr-points" title="очки">О</span></div>';
+      table.innerHTML = head + (rows.length ? rows.map(function (row) {
+        var crown = totals.complete && row.place === 1;
+        var pid = (row.entrant.players[0] || {}).id || '';
+        return '<div class="league-row' + (crown ? ' is-champion' : '') + (totals.complete && row.place <= 3 ? ' is-podium place-' + row.place : '') + (row.played ? ' is-played' : '') + '"' +
+          (pid ? ' data-player="' + esc(pid) + '" role="button" tabindex="0"' : '') + '>' +
+          '<span class="lr-rank">' + (crown ? '👑' : row.place) + '</span>' +
+          '<span class="lr-name">' + row.entrant.players.map(function (pl) {
+            return '<span class="avatar" style="--c1:' + pl.c1 + ';--c2:' + pl.c2 + '"><span>' + esc(pl.initials) + '</span></span>';
+          }).join('') + '<b>' + esc(row.entrant.label) + '</b></span>' +
+          '<span class="lr-games">' + row.played + '</span>' +
+          '<span class="lr-wins">' + row.wins + '</span>' +
+          '<span class="lr-losses">' + row.losses + '</span>' +
+          '<span class="lr-points">' + row.points + '</span></div>';
+      }).join('') : '<div class="league-empty">Нет участников.</div>');
+    }
+
+    var prog = $('#bracket-progress'), fill = $('#bracket-progress-fill');
+    if (prog) prog.textContent = totals.decided + ' / ' + Math.max(0, totals.total);
+    if (fill) fill.style.setProperty('--w', totals.total ? Math.round(totals.decided / totals.total * 100) + '%' : '0%');
+
+    var note = $('#league-note');
+    if (note) {
+      note.innerHTML = '<b>В</b> — победы, <b>О</b> — очки таблицы (1 за победу).' +
+        '<span>Место в таблице = место в турнире: 3 / 2 / 1' +
+        ((compOf(d).seats || 1) > 1 ? ', в 2×2 — 1,5 / 1 / 0,5' : '') +
+        '. При равенстве побед — мини-таблица личных встреч.</span>';
+    }
   }
 
   function renderChampion(d) {
@@ -731,27 +753,31 @@
     if (!slot) return;
     d = d || discById(state.bracketId);
     if (!d || isBoard(d)) { slot.innerHTML = ''; return; }
-    var rounds = buildRounds(d);
-    var final = rounds[rounds.length - 1][0];
-    var champ = final.winner ? entrantByKey(d, final.winner) : null;
-    if (!champ) {
-      slot.innerHTML = '<div class="champion-empty glass"><span class="ce-icon" aria-hidden="true">⚔️</span>' +
-        '<div><b>Финал ещё не сыгран</b><span>Кликай по участникам в сетке — или запусти автопрогноз.</span></div></div>';
+    var tours = buildTours(d);
+    var totals = leagueTotals(tours);
+    var rows = leagueStandings(d, tours);
+    var leader = rows[0];
+    if (!leader) { slot.innerHTML = ''; return; }
+    if (!totals.decided) {
+      slot.innerHTML = '<div class="champion-empty glass"><span class="ce-icon" aria-hidden="true">🏁</span>' +
+        '<div><b>Круговая ещё не сыграна</b><span>Отмечай победителей матчей — таблица пересчитается сразу, или запусти автопрогноз.</span></div></div>';
       return;
     }
-    var first = champ.players[0] || {};
-    slot.innerHTML = '<div class="champion-card">' +
-      '<span class="champ-crown" aria-hidden="true">👑</span>' +
+    var first = leader.entrant.players[0] || {};
+    var complete = totals.complete;
+    slot.innerHTML = '<div class="champion-card' + (complete ? ' is-final' : ' is-live') + '">' +
+      '<span class="champ-crown" aria-hidden="true">' + (complete ? '👑' : '📈') + '</span>' +
       '<span class="avatar champ-avatar" style="--c1:' + (first.c1 || '#f3cd7c') + ';--c2:' + (first.c2 || '#e8ac4a') + '"><span>' + esc(first.initials || '★') + '</span></span>' +
-      '<div class="champ-body"><span class="champ-label">Чемпион · ' + esc(d.name) + ' ' + esc(d.mode) + '</span>' +
-      '<div class="champ-name">' + esc(champ.label) + '</div>' +
-      '<div class="champ-sub">' + esc(first.name || '') + ' · ' + esc(seriesOf(d)) + ' · ' + esc(d.format) + '</div></div>' +
+      '<div class="champ-body"><span class="champ-label">' + (complete ? 'Чемпион' : 'Лидер') + ' · ' + esc(d.name) + ' ' + esc(d.mode) + '</span>' +
+      '<div class="champ-name">' + esc(leader.entrant.label) + '</div>' +
+      '<div class="champ-sub">' + esc(first.name || '') + ' · ' + leader.wins + '–' + leader.losses +
+      ' · ' + (complete ? 'все ' + totals.total + ' матчей сыграны' : 'сыграно ' + totals.decided + ' из ' + totals.total) + '</div></div>' +
       '<div class="champ-actions"><button class="btn btn-primary btn-sm" type="button" data-action="share-champ">Поделиться</button>' +
       '<button class="btn btn-ghost btn-sm" type="button" data-action="open-champ" data-player="' + esc(first.id || '') + '">Профиль</button></div>' +
       '</div>';
   }
 
-  /* ── заезды: 1-е / 2-е / 3-е место, без сетки ─────────────────────────── */
+  /* ── заезды: 1-е / 2-е / 3-е место, без круговой ───────────────────────── */
   function boardSelectOptions(d, st, place) {
     var busy = {};
     [1, 2, 3].forEach(function (p) { if (p !== place && st[p]) busy[st[p]] = 1; });
@@ -833,7 +859,7 @@
       renderBoard(d);
       var champSlot = $('#champion-slot');
       if (champSlot) champSlot.innerHTML = '';
-    } else { renderBracket(d); renderChampion(d); }
+    } else { renderLeague(d); renderChampion(d); }
   }
 
   function boardPick(key) {
@@ -898,36 +924,40 @@
     if (!d) return;
     if (isBoard(d)) { boardAuto(); return; }
     if (state.autoRunning) { cancelAuto(); toast('Автопрогноз остановлен', '⏹'); return; }
+    var first = buildTours(d);
+    if (!first.length) { toast('Нужно хотя бы два участника — заявок пока мало', '⏳'); return; }
     state.autoRunning = true;
     var btn = $('[data-action="auto-bracket"]');
     if (btn) { btn.disabled = false; btn.innerHTML = '<span aria-hidden="true">⏹</span><span>Стоп</span>'; }
-    var step = function (r) {
-      if (state.bracketId !== d.id) { cancelAuto(); return; }
-      var nowRounds = buildRounds(d);
-      if (r >= nowRounds.length) { finish(); return; }
-      var st = bracketState(d.id);
-      nowRounds[r].forEach(function (m, i) {
-        if (m.a && m.b && !m.winner) {
-          var a = (entrantByKey(d, m.a) || {}).strength || 1;
-          var b = (entrantByKey(d, m.b) || {}).strength || 1;
-          var pa = 0.5 + (a - b) / 60;
-          st.winners[r + '-' + i] = Math.random() < pa ? m.a : m.b;
-        }
-      });
-      saveBrackets();
-      renderBracket(d); renderChampion(d);
-      sound(520 + r * 90, 0.05, 'triangle', 0.025);
-      if (r < nowRounds.length - 1) autoTimer = setTimeout(function () { step(r + 1); }, 420);
-      else finish();
-    };
     var finish = function () {
       state.autoRunning = false;
       autoTimer = null;
       if (btn) { btn.disabled = false; if (btn.dataset.label) btn.innerHTML = btn.dataset.label; }
-      var roundsNow = buildRounds(d);
-      var final = roundsNow[roundsNow.length - 1][0];
-      var champ = final.winner ? entrantByKey(d, final.winner) : null;
-      if (champ) { confetti(); chime(); toast('Автопрогноз готов: <b>' + esc(champ.label) + '</b> забирает «' + esc(d.name) + ' ' + esc(d.mode) + '»', '👑'); }
+      var tours = buildTours(d);
+      var totals = leagueTotals(tours);
+      var leader = leagueStandings(d, tours)[0];
+      if (totals.complete && leader) {
+        confetti(); chime();
+        toast('Автопрогноз готов: <b>' + esc(leader.entrant.label) + '</b> забирает «' + esc(d.name) + ' ' + esc(d.mode) + '»', '👑');
+      }
+    };
+    var step = function (t) {
+      if (state.bracketId !== d.id) { cancelAuto(); return; }
+      var tours = buildTours(d);
+      if (t >= tours.length) { finish(); return; }
+      var st = bracketState(d.id);
+      tours[t].forEach(function (m, i) {
+        if (!m.a || !m.b || m.winner) return;
+        var a = (entrantByKey(d, m.a) || {}).strength || 1;
+        var b = (entrantByKey(d, m.b) || {}).strength || 1;
+        var pa = 0.5 + (a - b) / 60;
+        st.winners[t + '-' + i] = Math.random() < pa ? m.a : m.b;
+      });
+      saveBrackets();
+      renderLeague(d); renderChampion(d);
+      sound(520 + t * 90, 0.05, 'triangle', 0.025);
+      if (t < tours.length - 1) autoTimer = setTimeout(function () { step(t + 1); }, 380);
+      else finish();
     };
     step(0);
   }
@@ -937,33 +967,36 @@
     var entrant = btn.getAttribute('data-entrant') || btn.getAttribute('data-player');
     if (!key || !entrant) return;
     var d = discById(state.bracketId);
-    if (!d) return;
-    var rounds = buildRounds(d);
+    if (!d || isBoard(d)) return;
+    var tours = buildTours(d);
     var parts = key.split('-');
-    var m = rounds[+parts[0]] && rounds[+parts[0]][+parts[1]];
-    if (!m) return;
-    if (!m.a || !m.b) { toast('Соперник ещё не определён — сначала доиграй предыдущий раунд', '⏳'); return; }
+    var m = tours[+parts[0]] && tours[+parts[0]][+parts[1]];
+    if (!m || !m.a || !m.b) return;
     var st = bracketState(d.id);
     if (st.winners[key] === entrant) delete st.winners[key];
     else st.winners[key] = entrant;
     saveBrackets();
     haptic(st.winners[key] ? 14 : 8);
     sound(st.winners[key] ? 720 : 380, 0.06, 'triangle', 0.03);
-    renderBracket(d);
+    renderLeague(d);
     renderChampion(d);
-    var roundsNow = buildRounds(d);
-    var final = roundsNow[roundsNow.length - 1][0];
-    if (final.winner) { slotCelebrate(); }
+    if (leagueTotals(buildTours(d)).complete) slotCelebrate();
   }
   var celebrated = {};
   function slotCelebrate() {
     var d = discById(state.bracketId);
-    var key = state.bracketId + ':' + buildRounds(d).map(function (r) { return r.map(function (m) { return m.winner; }).join(','); }).join('|');
+    if (!d || isBoard(d)) return;
+    var tours = buildTours(d);
+    if (!leagueTotals(tours).complete) return;
+    var key = state.bracketId + ':' + tours.map(function (ms) {
+      return ms.map(function (m) { return m.winner; }).join(',');
+    }).join('|');
     if (celebrated[key]) return;
     celebrated[key] = true;
+    var leader = leagueStandings(d, tours)[0];
+    if (!leader) return;
     confetti(); chime();
-    var champ = entrantByKey(d, buildRounds(d).slice(-1)[0][0].winner);
-    if (champ) toast('Чемпион «' + esc(d.name) + '» — <b>' + esc(champ.label) + '</b>', '🏆');
+    toast('Чемпион «' + esc(d.name) + '» — <b>' + esc(leader.entrant.label) + '</b>', '🏆');
   }
 
   function fillBracketSelect() {
@@ -1392,12 +1425,12 @@
       '<div class="md-meta-item"><small>формат</small><b>' + esc(isBoard(d) ? (c.metric || 'заезд') : (c.seriesNote || seriesOf(d))) + '</b></div>' +
       '<div class="md-meta-item"><small>участники</small><b>' + list.length + ' из ' + state.players.length + '</b></div></div>' +
       '<div class="md-section"><h4>Победа</h4><div class="md-rules"><b>' + esc(c.win || '—') + '</b><br>' + esc(d.rules) + '</div></div>' +
-      '<div class="md-section"><h4>Регламент</h4><ul class="md-rule-list">' + (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+      '<div class="md-section"><h4>Регламент</h4><ul class="md-rule-list">' + (isBoard(d) ? '' : '<li><b>Круговая система:</b> каждый играет с каждым один раз; победа = 1 очко в таблице.</li>') + (c.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
       ((c.tbd || []).length ? '<div class="md-tbd"><span>уточнить до старта</span>' + c.tbd.map(function (t) { return '<i>' + esc(t) + '</i>'; }).join('') + '</div>' : '') + '</div>' +
       '<div class="md-section"><h4>Заявились</h4><div class="md-people">' + (list.length ? list.map(function (p) {
         return '<button class="md-person" type="button" data-md-player="' + p.id + '"><span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' + esc(p.nick) + '</button>';
       }).join('') : '<span class="modal-info">Пока никто — стань первым.</span>') + '</div></div>' +
-      '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-grid="' + d.id + '">' + (isBoard(d) ? 'Открыть заезд' : 'Открыть сетку') + '</button>' +
+      '<div class="md-actions"><button class="btn btn-primary" type="button" data-md-grid="' + d.id + '">' + (isBoard(d) ? 'Открыть заезд' : 'Открыть таблицу') + '</button>' +
       '<button class="btn btn-ghost" type="button" data-md-share-disc="' + d.id + '">Поделиться</button>' +
       '<button class="btn btn-ghost" type="button" data-md-ics="' + d.id + '">Когда играем</button></div>';
     openModal(html);
@@ -1438,9 +1471,9 @@
     { name: 'Заявка на турнир', type: 'Действие', icon: '🏆', hint: 'форма', run: function () { window.open(EVENT.formUrl, '_blank', 'noopener'); } },
     { name: 'Случайный боец', type: 'Действие', icon: '🎯', hint: 'рандом', run: function () { randomPlayer(); } },
     { name: 'Случайное дуо', type: 'Действие', icon: '🧬', hint: 'рандом', run: function () { randomDuo(); } },
-    { name: 'Автопрогноз сетки', type: 'Действие', icon: '⚡', hint: 'сетка', run: function () { autoBracket(); } },
-    { name: 'Перемешать пары', type: 'Действие', icon: '🔀', hint: 'сетка', run: function () { shuffleBracket(); } },
-    { name: 'Сбросить сетку', type: 'Действие', icon: '↺', hint: 'сетка', run: function () { resetBracket(); } },
+    { name: 'Автопрогноз круговой', type: 'Действие', icon: '⚡', hint: 'круговая', run: function () { autoBracket(); } },
+    { name: 'Пересобрать туры', type: 'Действие', icon: '🔀', hint: 'круговая', run: function () { shuffleBracket(); } },
+    { name: 'Сбросить таблицу', type: 'Действие', icon: '↺', hint: 'круговая', run: function () { resetBracket(); } },
     { name: 'Когда играем', type: 'Действие', icon: '📅', hint: 'даты', run: function () { datesTbd(); } },
     { name: 'Копировать ссылку', type: 'Действие', icon: '🔗', hint: 'share', run: function () { sharePage(); } },
     { name: 'Сменить тему', type: 'Действие', icon: '🌗', hint: 'тема', run: function () { toggleTheme(); } },
@@ -1477,7 +1510,7 @@
         '<span class="pal-icon" aria-hidden="true">' + it.icon + '</span>' +
         '<span class="pal-body"><span class="pal-name">' + esc(it.name) + '</span><span class="pal-type">' + esc(it.type) + '</span></span>' +
         '<span class="pal-hint">' + esc(it.hint || '') + '</span></button>';
-    }).join('') : '<div class="pal-empty">Ничего не нашлось. Попробуй «дота», «сетка», «заезд» или «Сева».</div>';
+    }).join('') : '<div class="pal-empty">Ничего не нашлось. Попробуй «дота», «круговая», «заезд» или «Сева».</div>';
   }
 
   function openPalette() {
@@ -1546,7 +1579,7 @@
     saveBrackets();
     renderComp();
     sound(460, 0.07, 'triangle', 0.03);
-    toast('Пары «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
+    toast('Туры «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
   }
   function resetBracket() {
     cancelAuto();
@@ -1557,7 +1590,7 @@
     saveBrackets();
     renderComp();
     sound(360, 0.07, 'sine', 0.03);
-    toast('Сетка «' + esc(d.name) + ' ' + esc(d.mode) + '» сброшена', '↺');
+    toast('Таблица «' + esc(d.name) + ' ' + esc(d.mode) + '» сброшена', '↺');
   }
   function setBracketDisc(id) {
     if (!discById(id)) return;
@@ -1652,12 +1685,13 @@
     var d = discById(state.bracketId);
     if (!d) return;
     if (isBoard(d)) { shareBoard(); return; }
-    var rounds = buildRounds(d);
-    var champ = rounds[rounds.length - 1][0].winner;
-    var p = champ ? entrantByKey(d, champ) : null;
-    var text = 'Сетка GAMEpiada · ' + d.name + ' ' + d.mode + ' · ' + seriesOf(d) + (p ? ' — чемпион: ' + p.label : '') + '. Собери свою: ';
+    var tours = buildTours(d);
+    var totals = leagueTotals(tours);
+    var leader = leagueStandings(d, tours)[0];
+    var tail = leader && totals.decided ? (totals.complete ? ' — чемпион: ' : ' — лидер: ') + leader.entrant.label : '';
+    var text = 'Круговая GAMEpiada · ' + d.name + ' ' + d.mode + ' · ' + seriesOf(d) + tail + '. Таблица: ';
     copy(text + EVENT.siteUrl + '#bracket').then(function (ok) {
-      toast(ok ? 'Сетка скопирована' : 'Ссылка: ' + EVENT.siteUrl + '#bracket', '🏟️');
+      toast(ok ? 'Таблица скопирована' : 'Ссылка: ' + EVENT.siteUrl + '#bracket', '🏟️');
     });
   }
   function shareDuo() {
@@ -1910,6 +1944,8 @@
     if (discCard) { discModal(discCard.getAttribute('data-disc-id')); return; }
     var playerCard = e.target.closest('.player-card');
     if (playerCard) { playerModal(playerCard.getAttribute('data-player')); return; }
+    var leagueRow = e.target.closest('.league-row[data-player]');
+    if (leagueRow) { playerModal(leagueRow.getAttribute('data-player')); return; }
     var matrixDot = e.target.closest('.matrix-dot');
     if (matrixDot) { playerModal(matrixDot.getAttribute('data-player')); return; }
     var pairCard = e.target.closest('.pair-card');
@@ -2005,11 +2041,11 @@
       return;
     }
     if (typing) return;
-    var card = e.target.closest && e.target.closest('.disc-card,.player-card,.pair-card');
+    var card = e.target.closest && e.target.closest('.disc-card,.player-card,.pair-card,.league-row[data-player]');
     if (card && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       if (card.classList.contains('disc-card')) discModal(card.getAttribute('data-disc-id'));
-      else if (card.classList.contains('player-card')) playerModal(card.getAttribute('data-player'));
+      else if (card.classList.contains('player-card') || card.classList.contains('league-row')) playerModal(card.getAttribute('data-player'));
       else setDuo(card.getAttribute('data-pair-a'), card.getAttribute('data-pair-b'), true);
     }
   });
@@ -2055,11 +2091,7 @@
     });
   }
   window.addEventListener('scroll', onScroll, { passive: true });
-  var resizeTimer = null;
-  window.addEventListener('resize', function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () { drawBracketLines(buildRounds(discById(state.bracketId))); }, 160);
-  });
+  /* Линий между раундами больше нет — на resize пересчитывать нечего. */
 
   /* reveal + counters + scroll spy */
   (function observables() {
@@ -2132,7 +2164,7 @@
         navigator.serviceWorker.register('sw.js').catch(function () { /* ignore */ });
       });
     }
-    window.GP = { state: state, openDisc: discModal, openPlayer: playerModal, setDuo: setDuo, refresh: function () { loadLive(true); } };
+    window.GP = { state: state, openDisc: discModal, openPlayer: playerModal, setDuo: setDuo, refresh: function () { loadLive(true); }, league: { tours: buildTours, standings: leagueStandings, totals: leagueTotals } };
     window.setTimeout(deepLink, 60);
   }
 

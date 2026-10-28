@@ -110,8 +110,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('disc cards = 17', qa('#disc-grid .disc-card') === 17, qa('#disc-grid .disc-card'));
   check('matrix rows = 17', qa('#matrix-scroll tbody tr') === 17, qa('#matrix-scroll tbody tr'));
   check('matrix cells on = total', qa('#matrix-scroll .matrix-dot.on') === TOTAL_SNAP, qa('#matrix-scroll .matrix-dot.on') + ' / ' + TOTAL_SNAP);
-  check('bracket rounds = 3', qa('#bracket-board .bracket-round') === 3, qa('#bracket-board .bracket-round'));
-  check('bracket lines', ($('#bracket-lines').innerHTML || '').includes('bracket-path'), ($('#bracket-lines').innerHTML || '').length + ' chars');
+  check('круговая: туры = 5', qa('#bracket-board .tour-card') === 5, qa('#bracket-board .tour-card'));
+  check('круговая: матчи = каждый с каждым', qa('#bracket-board .match') === 15, qa('#bracket-board .match'));
+  check('таблица участников = 6', qa('#league-table .league-row:not(.is-head)') === 6, qa('#league-table .league-row:not(.is-head)'));
+  check('svg-линий больше нет', !$('#bracket-lines'), 'removed');
   check('roster cards = 8', qa('#roster-grid .player-card') === 8, qa('#roster-grid .player-card'));
   check('leader rows = 8', qa('#leader-list .leader-row') === 8, qa('#leader-list .leader-row'));
   check('wishes = 8', qa('#wishes-wall .wish-card') === 8, qa('#wishes-wall .wish-card'));
@@ -170,33 +172,110 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('#modal-close').click();
   check('modal closes', $('#modal').hidden, '');
 
-  // ── bracket play ───────────────────────────────────────────────────
-  check('bracket starts without champion', /Финал ещё не сыгран/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 60));
-  const progressBefore = $('#bracket-progress').textContent;
-  const playable = Array.from(document.querySelectorAll('#bracket-board .match'))
-    .filter((m) => m.querySelectorAll('.match-row[data-entrant]').length === 2)
-    .map((m) => m.querySelector('.match-row[data-entrant]'))[0];
-  const denominator = progressBefore.split('/')[1];
-  playable.click();
-  check('bracket pick works', !!playable && /^1 \//.test($('#bracket-progress').textContent.trim()), progressBefore + ' -> ' + $('#bracket-progress').textContent);
-  check('bracket denominator stable', $('#bracket-progress').textContent.split('/')[1] === denominator, denominator + ' -> ' + $('#bracket-progress').textContent);
-  check('champion slot has text', ($('#champion-slot').textContent || '').length > 0, 'ok');
+  // ── круговая: каждый с каждым ──────────────────────────────────────
+  await sleep(520); // ждём live-синк, иначе состав меняется посреди проверки
+  const leagueCounts = () => {
+    const n = qa('#league-table .league-row:not(.is-head)');
+    return { n, matches: qa('#bracket-board .match'), tours: qa('#bracket-board .tour-card') };
+  };
+  const L = leagueCounts();
+  const leagueTotal = Number(($('#bracket-progress').textContent || '').split('/')[1]) || 0;
+  check('league title', /Круговая.*Dota 2/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
+  check('league meta says каждый с каждым', /каждый с каждым/.test($('#bracket-meta').textContent), $('#bracket-meta').textContent.replace(/\s+/g, ' ').slice(0, 60));
+  check('круговая: матчи = n(n−1)/2', L.matches === L.n * (L.n - 1) / 2 && L.matches > 0, L.matches + ' матчей, ' + L.n + ' участников');
+  check('круговая: туры = n−1 (или n при нечётном)', L.tours === (L.n % 2 ? L.n : L.n - 1), L.tours + ' туров');
+  check('прогресс знает все матчи', leagueTotal === L.matches, $('#bracket-progress').textContent);
+  const allPairs = $$('#bracket-board .match').map((m) => $$('.match-row[data-entrant]', m).map((r) => r.getAttribute('data-entrant')).sort().join(' vs '));
+  check('у каждого матча два участника', allPairs.length === L.matches && allPairs.every((p) => p.includes(' vs ')), allPairs.length + ' матчей');
+  check('пары не повторяются', new Set(allPairs).size === L.matches, new Set(allPairs).size + ' уникальных из ' + L.matches);
+  check('нет пустых слотов и bye', qa('#bracket-board .match-row.is-empty') === 0 && qa('#bracket-board .match-row.is-auto') === 0, 'чисто');
+  check('старт без чемпиона', /ещё не сыграна/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 50));
+  check('таблица стартует с нулей', $$('#league-table .league-row:not(.is-head) .lr-points').every((el) => el.textContent === '0'), '0');
+
+  $('#bracket-board .match-row[data-entrant]').click();
+  check('клик отмечает победу', qa('#bracket-board .match-row.is-winner') === 1 && $('#bracket-progress').textContent.trim() === '1 / ' + leagueTotal, $('#bracket-progress').textContent);
+  check('таблица пересчиталась', $$('#league-table .league-row:not(.is-head) .lr-wins').some((el) => el.textContent === '1'), $$('#league-table .league-row:not(.is-head)').map((r) => r.querySelector('.lr-wins').textContent).join(','));
+  check('лидер вместо чемпиона', /Лидер/.test($('#champion-slot').textContent) && !/👑/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 50));
+  $('#bracket-board .match-row.is-winner').click();
+  check('повторный клик снимает победу', $('#bracket-progress').textContent.trim() === '0 / ' + leagueTotal, $('#bracket-progress').textContent);
+
+  $('[data-action="auto-bracket"]').click();
+  await sleep(420 * L.tours + 900);
+  check('автопрогноз закрывает все матчи', $('#bracket-progress').textContent.trim() === leagueTotal + ' / ' + leagueTotal, $('#bracket-progress').textContent);
+  check('чемпион определён', /Чемпион/.test($('#champion-slot').textContent), $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 60));
+  check('корона в таблице одна', qa('#league-table .league-row.is-champion') === 1, qa('#league-table .league-row.is-champion'));
+  check('сумма побед = числу матчей', $$('#league-table .league-row:not(.is-head) .lr-wins').reduce((n, el) => n + Number(el.textContent), 0) === leagueTotal, leagueTotal + '');
+  check('сумма поражений = числу матчей', $$('#league-table .league-row:not(.is-head) .lr-losses').reduce((n, el) => n + Number(el.textContent), 0) === leagueTotal, leagueTotal + '');
+  const leagueDisc = window.GP_DATA.disciplines.find((x) => x.id === 'dota11');
+  const playedTours = window.GP.league.tours(leagueDisc);
+  const playedRows = window.GP.league.standings(leagueDisc, playedTours);
+  const pointsGroups = {};
+  playedRows.forEach((r) => { (pointsGroups[r.points] = pointsGroups[r.points] || []).push(r); });
+  const tieProblems = [];
+  Object.keys(pointsGroups).forEach((pts) => {
+    const g = pointsGroups[pts];
+    if (g.length === 2) {
+      const m = playedTours.flat().find((x) => (x.a === g[0].key && x.b === g[1].key) || (x.a === g[1].key && x.b === g[0].key));
+      if (m && m.winner !== g[0].key) tieProblems.push(g[0].key + ' / ' + g[1].key);
+    } else if (g.length > 2) {
+      const inside = {};
+      g.forEach((r) => { inside[r.key] = 0; });
+      playedTours.flat().forEach((m) => {
+        if (m.winner && m.a in inside && m.b in inside) inside[m.winner] += 1;
+      });
+      for (let i = 1; i < g.length; i++) if (inside[g[i].key] > inside[g[i - 1].key]) tieProblems.push(pts + ' очк: ' + g[i - 1].key + ' < ' + g[i].key);
+    }
+  });
+  check('равенство побед решает мини-таблица', tieProblems.length === 0, tieProblems.join(', ') || playedRows.length + ' участников');
+
+  $('[data-action="reset-bracket"]').click();
+  check('сброс очищает таблицу', $('#bracket-progress').textContent.trim() === '0 / ' + leagueTotal && qa('#bracket-board .match-row.is-winner') === 0, $('#bracket-progress').textContent);
+
   $('#bracket-select').value = 'chess';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
-  check('bracket switch', /Шахматы/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
+  const C = leagueCounts();
+  const chessTotal = Number(($('#bracket-progress').textContent || '').split('/')[1]) || 0;
+  check('league switch', /Шахматы/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
+  check('chess: каждый с каждым', C.matches === C.n * (C.n - 1) / 2 && C.matches > 0, C.matches + ' матчей, ' + C.n + ' участников');
+  check('chess: туры по кругу', C.tours === (C.n % 2 ? C.n : C.n - 1), C.tours + ' туров');
   $('[data-action="shuffle-bracket"]').click();
-  check('shuffle keeps rounds', qa('#bracket-board .bracket-round') >= 2, qa('#bracket-board .bracket-round'));
-  $('[data-action="reset-bracket"]').click();
-  check('reset clears winners', /^0 \//.test($('#bracket-progress').textContent.trim()), $('#bracket-progress').textContent);
+  check('shuffle держит туры', qa('#bracket-board .tour-card') === C.tours && $('#bracket-progress').textContent.trim() === '0 / ' + chessTotal, qa('#bracket-board .tour-card') + ' / ' + $('#bracket-progress').textContent);
 
-  check('bye-матчи без кнопок', qa('#bracket-board .match-row.is-auto') > 0 && qa('#bracket-board .match-row.is-auto[data-entrant]') === 0, qa('#bracket-board .match-row.is-auto') + ' автопроходов, кликабельных 0');
-  check('ожидание соперника не кликается', qa('#bracket-board .match-row.is-waiting[data-entrant]') === 0 && qa('#bracket-board .match-row.is-waiting') > 0, qa('#bracket-board .match-row.is-waiting'));
+  // ── дуэль из двух: один матч = сразу чемпион ───────────────────────
+  $('#bracket-select').value = 'mk';
+  $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
+  check('mk: два бойца — один матч', qa('#bracket-board .match') === 1 && qa('#bracket-board .tour-card') === 1, qa('#bracket-board .match') + ' матч');
+  $('#bracket-board .match-row[data-entrant]').click();
+  check('mk: победа = чемпион сразу', /Чемпион/.test($('#champion-slot').textContent) && qa('#league-table .league-row.is-champion') === 1, $('#champion-slot').textContent.replace(/\s+/g, ' ').slice(0, 50));
 
+  // ── каждая крутовая дисциплина: N−1 туров и C(N,2) матчей ──────────
+  const leagueIds = $$('#bracket-select option').map((o) => o.value);
+  const broken = [];
+  let leagueChecked = 0;
+  leagueIds.forEach((id) => {
+    $('#bracket-select').value = id;
+    $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
+    if (document.body.classList.contains('is-board-mode')) return;
+    const n = qa('#league-table .league-row:not(.is-head)');
+    if (n < 2) return;
+    leagueChecked++;
+    const matches = qa('#bracket-board .match');
+    const tours = qa('#bracket-board .tour-card');
+    const expectTours = n % 2 ? n : n - 1;
+    const pairs = $$('#bracket-board .match').map((m) => $$('.match-row[data-entrant]', m).map((r) => r.getAttribute('data-entrant')).sort().join('|'));
+    const unique = new Set(pairs).size;
+    if (matches !== n * (n - 1) / 2 || tours !== expectTours || unique !== matches) {
+      broken.push(id + ': ' + n + ' уч / ' + tours + ' туров / ' + matches + ' матчей / ' + unique + ' пар');
+    }
+  });
+  check('все круговые: N−1 туров, N(N−1)/2 матчей, без повторов', broken.length === 0, broken.join('; ') || leagueChecked + ' круговых проверено');
+
+  // ── заезд: подиум 1 / 2 / 3 вместо круговой ────────────────────────
   // ── заезд: подиум 1 / 2 / 3 вместо сетки ───────────────────────────
   $('#bracket-select').value = 'tm';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
   check('board title', /Заезд.*Trackmania/.test($('#bracket-title').textContent), $('#bracket-title').textContent);
-  check('board mode hides bracket', $('#bracket-body').hidden && !$('#board-view').hidden, 'board only');
+  check('board mode hides league', $('#bracket-body').hidden && !$('#board-view').hidden, 'board only');
   check('podium slots = 3', qa('#board-view .podium-slot') === 3, qa('#board-view .podium-slot'));
   check('podium points', /3 \/ 2 \/ 1/.test($('#comp-brief').textContent), 'ok');
   check('board brief from regulation', /сумма времени|5 трасс/i.test($('#comp-brief').textContent), 'ok');
@@ -207,14 +286,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   $('[data-action="board-auto"]').click();
   check('board auto fills 3', qa('#board-view .podium-slot.is-filled') === 3, qa('#board-view .podium-slot.is-filled'));
   check('board points awarded', /\+3 очк/.test($('#board-podium').textContent) && /\+1 очк/.test($('#board-podium').textContent), 'ok');
-  $('#board-list .board-row').click();
+  const placedRow = $$('#board-list .board-row').find((r) => (r.querySelector('.br-rank').textContent || '').indexOf('#') === 0);
+  if (placedRow) placedRow.click();
   check('board pick clears place', qa('#board-view .podium-slot.is-filled') === 2, qa('#board-view .podium-slot.is-filled'));
   $('[data-action="board-reset"]').click();
   check('board reset empties podium', qa('#board-view .podium-slot.is-filled') === 0, qa('#board-view .podium-slot.is-filled'));
-  check('board has no bracket lines', !$('#bracket-lines').innerHTML.length, 'empty');
   $('#bracket-select').value = 'dota11';
   $('#bracket-select').dispatchEvent(new window.Event('change', { bubbles: true }));
-  check('back to bracket mode', !$('#bracket-body').hidden && $('#board-view').hidden, 'ok');
+  check('back to league mode', !$('#bracket-body').hidden && $('#board-view').hidden && qa('#bracket-board .tour-card') > 0, qa('#bracket-board .tour-card') + ' туров');
   check('2×2 points split', $('.disc-card[data-disc-id="mcduo"] .tag.is-gold').textContent.trim() === '1,5 / 1 / 0,5', $('.disc-card[data-disc-id="mcduo"] .tag.is-gold').textContent.trim());
   check('roster says заявка', /заявка/.test($('#roster-grid').textContent) && !/в игре с/.test($('#roster-grid').textContent), 'ok');
   check('dota11 series BO1', /BO1/.test($('#bracket-meta').textContent), $('#bracket-meta').textContent.replace(/\s+/g, ' ').slice(0, 70));
