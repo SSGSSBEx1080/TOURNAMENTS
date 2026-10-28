@@ -23,7 +23,7 @@
 
 ## Форматы соревнований
 
-- **Круговая** (`comp.kind = 'bracket'`) — каждый с каждым: Dota 2, CS2, Clash Royale, Double Dealers, Rocket League, Geoguessr, Fortnite, Mortal Kombat 11, Minecraft PvP, шахматы, Brawl Stars (13 дисциплин). N участников → N−1 туров по круговому методу (при нечётном составе тур отдыхает один боец), (N−1)·N/2 матчей. Победа = 1 очко, место в таблице = итоговое место турнира. Серии BO1/BO3 и правила — из регламента.
+- **Круговая** (`comp.kind = 'bracket'`) — каждый с каждым: Dota 2 и CS 2 (по 1×1 и 2×2), Clash Royale, Double Dealers, Rocket League, Geoguessr, Fortnite, Mortal Kombat 11, Minecraft PvP, шахматы, Brawl Stars — 13 дисциплин. N участников → N−1 туров по круговому методу (при нечётном составе тур отдыхает один боец), (N−1)·N/2 матчей. Победа = 1 очко, место в таблице = итоговое место турнира. Серии BO1/BO3 и правила — из регламента.
 - **Заезд** (`comp.kind = 'board'`) — общий зачёт с местами 1/2/3: Geometry Dash, Minecraft Duo, Fall Guys, Trackmania. Ветка тут не нужна, поэтому показывается подиум.
 - Очки: 3 / 2 / 1 за места; в командах 2×2 делятся — 1,5 / 1 / 0,5.
 

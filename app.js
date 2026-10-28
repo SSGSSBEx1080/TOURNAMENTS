@@ -2091,7 +2091,7 @@
     });
   }
   window.addEventListener('scroll', onScroll, { passive: true });
-  /* Линий между раундами больше нет — на resize пересчитывать нечего. */
+  /* Линий между турами больше нет — на resize пересчитывать нечего. */
 
   /* reveal + counters + scroll spy */
   (function observables() {
