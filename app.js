@@ -542,7 +542,7 @@
      поэтому получается ровно N−1 туров без повторов и лишних матчей. */
 
   function tourLabel(index) {
-    return 'Тур ' + (index + 1);
+    return 'Раунд ' + (index + 1);
   }
 
   function buildTours(d) {
@@ -568,6 +568,16 @@
       });
     });
     return tours;
+  }
+
+  /* Сид участника — тот же порядок, что и раскладка раундов. */
+  function leagueSeeds(d) {
+    var st = bracketState(d.id);
+    var seeds = {};
+    seededShuffle(entrants(d).map(function (e) { return e.key; }), st.seed).forEach(function (key, i) {
+      seeds[key] = i + 1;
+    });
+    return seeds;
   }
 
   function leagueTotals(tours) {
@@ -598,7 +608,7 @@
   function leagueStandings(d, tours) {
     var byKey = {}, rows = [];
     entrants(d).forEach(function (e) {
-      var row = { key: e.key, entrant: e, played: 0, wins: 0, losses: 0, points: 0 };
+      var row = { key: e.key, entrant: e, played: 0, wins: 0, losses: 0, points: 0, tiebreak: 0 };
       byKey[e.key] = row;
       rows.push(row);
     });
@@ -627,6 +637,7 @@
           if (sy !== sx) return sy - sx;
           return String(x.entrant.label).localeCompare(String(y.entrant.label), 'ru');
         });
+        group.forEach(function (row) { row.tiebreak = score[row.key] || 0; });
         rows = rows.slice(0, mark).concat(group, rows.slice(stop));
       }
       mark = stop;
@@ -635,19 +646,6 @@
     return rows;
   }
 
-  function matchRow(d, m, t, i) {
-    /* В круговой у каждого матча ровно два участника: ни bye, ни ожидания нет. */
-    return [m.a, m.b].map(function (key) {
-      var e = entrantByKey(d, key) || { key: key, label: key, players: [] };
-      var first = e.players[0] || {};
-      var win = m.winner === key;
-      return '<button class="match-row' + (win ? ' is-winner' : '') + (e.team ? ' is-team' : '') + '" type="button"' +
-        ' data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + t + '-' + i + '"' +
-        (win ? ' aria-pressed="true"' : ' aria-pressed="false"') + ' title="' + esc(e.label) + '">' +
-        '<span class="match-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
-        '<span class="match-score" aria-hidden="true">✓</span></button>';
-    }).join('');
-  }
 
   function compBriefHtml(d) {
     var c = compOf(d);
@@ -690,6 +688,28 @@
     if (brief) brief.innerHTML = compBriefHtml(d);
   }
 
+  function rrRow(d, m, t, i, key, seed) {
+    var e = entrantByKey(d, key) || { key: key, label: key, players: [] };
+    var first = e.players[0] || {};
+    var win = m.winner === key;
+    var played = !!m.winner;
+    var score = win ? '1' : (played ? '0' : '–');
+    return '<button class="rr-row' + (win ? ' is-winner' : '') + (played && !win ? ' is-loser' : '') + (e.team ? ' is-team' : '') + '"' +
+      ' type="button" data-entrant="' + esc(key) + '" data-player="' + esc(first.id || '') + '" data-key="' + t + '-' + i + '"' +
+      ' aria-pressed="' + (win ? 'true' : 'false') + '" title="' + esc(e.label) + ' — победа в этом матче">' +
+      '<span class="rr-seed" aria-hidden="true">' + seed + '</span>' +
+      '<span class="rr-name">' + esc(e.label) + (e.team ? '<small>2×2</small>' : '') + '</span>' +
+      '<span class="rr-score" aria-hidden="true">' + score + '</span>' +
+      '</button>';
+  }
+
+  function rrMatch(d, m, t, i, seeds) {
+    return '<div class="rr-match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
+      rrRow(d, m, t, i, m.a, seeds[m.a] || 0) +
+      rrRow(d, m, t, i, m.b, seeds[m.b] || 0) +
+      '</div>';
+  }
+
   function renderLeague(d) {
     d = d || discById(state.bracketId) || queue()[0];
     if (!d) return;
@@ -698,41 +718,48 @@
     var tours = buildTours(d);
     var rows = leagueStandings(d, tours);
     var totals = leagueTotals(tours);
+    var seeds = leagueSeeds(d);
 
     if (!tours.length) {
       host.innerHTML = '<div class="league-empty">Нужно хотя бы два участника — на эту дисциплину пока мало заявок.</div>';
     } else {
       host.innerHTML = tours.map(function (matches, t) {
         var done = matches.filter(function (m) { return !!m.winner; }).length;
-        return '<section class="tour-card' + (done === matches.length ? ' is-done' : '') + '" data-tour="' + t + '">' +
-          '<header class="tour-head"><b>' + tourLabel(t) + '</b>' +
-          '<span class="tour-count">' + done + ' / ' + matches.length + '</span></header>' +
-          '<div class="tour-matches">' + matches.map(function (m, i) {
-            return '<div class="match' + (m.winner ? ' is-decided' : '') + '" data-key="' + t + '-' + i + '">' +
-              matchRow(d, m, t, i) + '</div>';
+        return '<section class="rr-round' + (done === matches.length ? ' is-done' : '') + '" data-tour="' + t + '">' +
+          '<header class="rr-round-head"><b>' + tourLabel(t) + '</b><span>' + done + ' / ' + matches.length + '</span></header>' +
+          '<div class="rr-matches">' + matches.map(function (m, i) {
+            return rrMatch(d, m, t, i, seeds);
           }).join('') + '</div></section>';
       }).join('');
     }
 
     var table = $('#league-table');
     if (table) {
-      var head = '<div class="league-row is-head"><span class="lr-rank">#</span><span class="lr-name">участник</span>' +
-        '<span class="lr-games" title="игр">И</span><span class="lr-wins" title="победы">В</span>' +
-        '<span class="lr-losses" title="поражения">П</span><span class="lr-points" title="очки">О</span></div>';
-      table.innerHTML = head + (rows.length ? rows.map(function (row) {
+      var head = '<thead><tr>' +
+        '<th class="rr-rank" scope="col">#</th>' +
+        '<th class="rr-who" scope="col">Участник</th>' +
+        '<th class="rr-gl" scope="col" title="матчи: победы-поражения-ничьи">Матчи В-П-Н</th>' +
+        '<th class="rr-tb" scope="col" title="тай-брейк: победы в мини-таблице личных встреч">ТБ</th>' +
+        '<th class="rr-w" scope="col">Победы</th>' +
+        '<th class="rr-d" scope="col">Ничьи</th>' +
+        '<th class="rr-p" scope="col">Очки</th>' +
+        '</tr></thead>';
+      var body = rows.length ? rows.map(function (row) {
         var crown = totals.complete && row.place === 1;
         var pid = (row.entrant.players[0] || {}).id || '';
-        return '<div class="league-row' + (crown ? ' is-champion' : '') + (totals.complete && row.place <= 3 ? ' is-podium place-' + row.place : '') + (row.played ? ' is-played' : '') + '"' +
+        return '<tr class="rr-tr' + (crown ? ' is-champion' : '') + (totals.complete && row.place <= 3 ? ' is-podium place-' + row.place : '') + '"' +
           (pid ? ' data-player="' + esc(pid) + '" role="button" tabindex="0"' : '') + '>' +
-          '<span class="lr-rank">' + (crown ? '👑' : row.place) + '</span>' +
-          '<span class="lr-name">' + row.entrant.players.map(function (pl) {
+          '<td class="rr-rank">' + (crown ? '👑' : row.place) + '</td>' +
+          '<td class="rr-who"><span class="rr-who-in">' + row.entrant.players.map(function (pl) {
             return '<span class="avatar" style="--c1:' + pl.c1 + ';--c2:' + pl.c2 + '"><span>' + esc(pl.initials) + '</span></span>';
-          }).join('') + '<b>' + esc(row.entrant.label) + '</b></span>' +
-          '<span class="lr-games">' + row.played + '</span>' +
-          '<span class="lr-wins">' + row.wins + '</span>' +
-          '<span class="lr-losses">' + row.losses + '</span>' +
-          '<span class="lr-points">' + row.points + '</span></div>';
-      }).join('') : '<div class="league-empty">Нет участников.</div>');
+          }).join('') + '<b>' + esc(row.entrant.label) + '</b></span></td>' +
+          '<td class="rr-gl">' + row.wins + ' - ' + row.losses + ' - 0</td>' +
+          '<td class="rr-tb">' + (row.tiebreak || 0) + '</td>' +
+          '<td class="rr-w">' + row.wins + '</td>' +
+          '<td class="rr-d">0</td>' +
+          '<td class="rr-p">' + row.points + '</td></tr>';
+      }).join('') : '<tr><td class="rr-empty" colspan="7">Нет участников.</td></tr>';
+      table.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
 
     var prog = $('#bracket-progress'), fill = $('#bracket-progress-fill');
@@ -741,13 +768,11 @@
 
     var note = $('#league-note');
     if (note) {
-      note.innerHTML = '<b>В</b> — победы, <b>О</b> — очки таблицы (1 за победу).' +
-        '<span>Место в таблице = место в турнире: 3 / 2 / 1' +
-        ((compOf(d).seats || 1) > 1 ? ', в 2×2 — 1,5 / 1 / 0,5' : '') +
-        '. При равенстве побед — мини-таблица личных встреч.</span>';
+      note.innerHTML = '<span><b>Матчи В-П-Н</b> — победы-поражения-ничьи: ничьих в круговой нет, счёт всегда 1:0.</span>' +
+        '<span><b>ТБ</b> — тай-брейк: победы в мини-таблице личных встреч равных по очкам. <b>Очки</b> = победы, а место в таблице превращается в сезонные 3 / 2 / 1' +
+        ((compOf(d).seats || 1) > 1 ? ' (в 2×2 — 1,5 / 1 / 0,5).' : '.') + '</span>';
     }
   }
-
   function renderChampion(d) {
     var slot = $('#champion-slot');
     if (!slot) return;
@@ -1486,7 +1511,7 @@
     { name: 'Случайный боец', type: 'Действие', icon: '🎯', hint: 'рандом', run: function () { randomPlayer(); } },
     { name: 'Случайное дуо', type: 'Действие', icon: '🧬', hint: 'рандом', run: function () { randomDuo(); } },
     { name: 'Автопрогноз круговой', type: 'Действие', icon: '⚡', hint: 'круговая', run: function () { autoBracket(); } },
-    { name: 'Пересобрать туры', type: 'Действие', icon: '🔀', hint: 'круговая', run: function () { shuffleBracket(); } },
+    { name: 'Пересобрать раунды', type: 'Действие', icon: '🔀', hint: 'круговая', run: function () { shuffleBracket(); } },
     { name: 'Сбросить таблицу', type: 'Действие', icon: '↺', hint: 'круговая', run: function () { resetBracket(); } },
     { name: 'Когда играем', type: 'Действие', icon: '📅', hint: 'даты', run: function () { datesTbd(); } },
     { name: 'Копировать ссылку', type: 'Действие', icon: '🔗', hint: 'share', run: function () { sharePage(); } },
@@ -1593,7 +1618,7 @@
     saveBrackets();
     renderComp();
     sound(460, 0.07, 'triangle', 0.03);
-    toast('Туры «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
+    toast('Раунды «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
   }
   function resetBracket() {
     cancelAuto();
@@ -1958,7 +1983,7 @@
     if (discCard) { discModal(discCard.getAttribute('data-disc-id')); return; }
     var playerCard = e.target.closest('.player-card');
     if (playerCard) { playerModal(playerCard.getAttribute('data-player')); return; }
-    var leagueRow = e.target.closest('.league-row[data-player]');
+    var leagueRow = e.target.closest('#league-table tr[data-player]');
     if (leagueRow) { playerModal(leagueRow.getAttribute('data-player')); return; }
     var matrixDot = e.target.closest('.matrix-dot');
     if (matrixDot) { playerModal(matrixDot.getAttribute('data-player')); return; }
@@ -1972,7 +1997,7 @@
     if (slot) { discModal(slot.getAttribute('data-disc-id')); return; }
     var like = e.target.closest('[data-like]');
     if (like) { toggleLike(like.getAttribute('data-like')); return; }
-    var match = e.target.closest('#bracket-board .match-row[data-entrant]');
+    var match = e.target.closest('#bracket-board .rr-row[data-entrant]');
     if (match) { pickBracket(match); return; }
     var boardRow = e.target.closest('[data-board-pick]');
     if (boardRow) { boardPick(boardRow.getAttribute('data-board-pick')); return; }
@@ -2055,11 +2080,11 @@
       return;
     }
     if (typing) return;
-    var card = e.target.closest && e.target.closest('.disc-card,.player-card,.pair-card,.league-row[data-player]');
+    var card = e.target.closest && e.target.closest('.disc-card,.player-card,.pair-card,#league-table tr[data-player]');
     if (card && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       if (card.classList.contains('disc-card')) discModal(card.getAttribute('data-disc-id'));
-      else if (card.classList.contains('player-card') || card.classList.contains('league-row')) playerModal(card.getAttribute('data-player'));
+      else if (card.classList.contains('player-card') || card.tagName === 'TR') playerModal(card.getAttribute('data-player'));
       else setDuo(card.getAttribute('data-pair-a'), card.getAttribute('data-pair-b'), true);
     }
   });
