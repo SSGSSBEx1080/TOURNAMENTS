@@ -443,9 +443,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.7\.1$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.8\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
-  check('ассеты с версией', /styles\.css\?v=4\.7\.1/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.7\.1/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.8\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.8\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -474,6 +474,49 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('правка состава пережила live-синк', !!liveKept && liveKept.disciplines.indexOf(keptDisc) >= 0 && Object.keys(window.GP.state.rosterEdits).length > 0, liveKept ? liveKept.nick + ' · ' + liveKept.disciplines.join(',') : 'нет бойца');
   $('[data-action="roster-reset-all"]').click();
   check('правки сбрасываются после синка', Object.keys(window.GP.state.rosterEdits).length === 0, JSON.stringify(window.GP.state.rosterEdits));
+
+  // ── облако: общие результаты, права, админы ────────────────────────
+  const exp = window.GP.cloud.exportState();
+  check('облако: экспорт со всеми разделами', exp.schema === 1 && exp.brackets && exp.boards && exp.roster && Array.isArray(exp.admins), Object.keys(exp).join(','));
+  const merged = window.GP.cloud.merge(
+    { rev: 5, mode: 'live', admins: ['boss'], brackets: { dota11: { seed: 1, winners: { '0-0': 'p2' } } }, boards: { dd: { 1: 'p2' } }, roster: {} },
+    { rev: 0, mode: 'live', admins: ['boss', 'mate'], brackets: { dota11: { seed: 1, winners: { '0-1': 'p3' } } }, boards: { dd: { 2: 'p3' } }, roster: { p1: { add: ['fn'], drop: [] } } }
+  );
+  check('облако: слияние матчей', merged.brackets.dota11.winners['0-0'] === 'p2' && merged.brackets.dota11.winners['0-1'] === 'p3', JSON.stringify(merged.brackets.dota11.winners));
+  check('облако: слияние подиума', merged.boards.dd[1] === 'p2' && merged.boards.dd[2] === 'p3', JSON.stringify(merged.boards.dd));
+  check('облако: слияние состава', merged.roster.p1 && merged.roster.p1.add[0] === 'fn', JSON.stringify(merged.roster));
+  check('облако: админы объединяются', merged.admins.indexOf('boss') >= 0 && merged.admins.indexOf('mate') >= 0, merged.admins.join(','));
+
+  window.GP.cloud.setToken('test-token');
+  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 10, updatedBy: 'boss', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: {} } }, boards: {}, roster: {} });
+  check('облако: админ видит общий режим', window.GP.cloud.status.mode === 'live' && !document.body.classList.contains('is-readonly'), window.GP.cloud.status.mode);
+  check('облако: чип показывает админа', /общие результаты/.test($('#cloud-chip').textContent), $('#cloud-chip').textContent.trim());
+  const winBefore = qa('#bracket-board .rr-row.is-winner');
+  $('#bracket-board .rr-row[data-entrant]').click();
+  check('облако: админ ставит результат', qa('#bracket-board .rr-row.is-winner') === winBefore + 1, winBefore + ' → ' + qa('#bracket-board .rr-row.is-winner'));
+
+  window.GP.cloud.setToken('');
+  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 11, updatedBy: 'boss', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: { dota11: { seed: 1, winners: { '0-0': 'p4' } } }, boards: {}, roster: {} });
+  check('облако: зритель — только чтение', window.GP.cloud.status.mode === 'readonly' && document.body.classList.contains('is-readonly'), window.GP.cloud.status.mode);
+  check('облако: зритель видит результат админа', qa('#bracket-board .rr-row.is-winner') === 1, qa('#bracket-board .rr-row.is-winner'));
+  const winRead = qa('#bracket-board .rr-row.is-winner');
+  $$('#bracket-board .rr-row[data-entrant]')[1].click();
+  check('облако: клик зрителя заблокирован', qa('#bracket-board .rr-row.is-winner') === winRead, qa('#bracket-board .rr-row.is-winner'));
+  $('#roster-inline .ri-chip:not(.is-on)').click();
+  check('облако: состав зрителю недоступен', !window.GP.state.rosterEdits.p1, JSON.stringify(window.GP.state.rosterEdits));
+
+  window.GP.cloud.setToken('test-token');
+  $('[data-action="cloud-panel"]').click();
+  check('админка: открывается', !$('#modal').hidden && /Кто вносит результаты/.test($('#modal-body').textContent), '');
+  check('админка: инструкция по токену', /personal-access-tokens/.test($('#modal-body').innerHTML) && qa('#modal-body .admin-help li') === 6, qa('#modal-body .admin-help li'));
+  window.GP.cloud.addAdmin('friend-login');
+  check('админка: назначение админа', window.GP.cloud.admins().indexOf('friend-login') >= 0, window.GP.cloud.admins().join(','));
+  check('админка: журнал пишет', window.GP.cloud.log().length > 0, window.GP.cloud.log()[0].text);
+  $('#modal-close').click();
+  window.GP.cloud.setToken('');
+  window.GP.cloud.setMode('local');
+  window.GP.cloud.apply({ schema: 1, mode: 'setup', rev: 0, admins: [], log: [], brackets: {}, boards: {}, roster: {} });
+  check('облако: возврат в локальный режим', window.GP.cloud.status.mode === 'local' && !document.body.classList.contains('is-readonly'), window.GP.cloud.status.mode);
 
   // ── errors ─────────────────────────────────────────────────────────
   check('no js errors', errors.length === 0, errors.join(' | '));

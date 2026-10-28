@@ -252,6 +252,7 @@
   function countFor(id) { return participants(discById(id)).length; }
   function saveBoards() {
     try { localStorage.setItem(LS.boards, JSON.stringify(state.boards)); } catch (e) { /* quota */ }
+    cloudMarkDirty('подиум заезда');
   }
   function boardState(id) {
     if (!state.boards[id]) state.boards[id] = { 1: '', 2: '', 3: '' };
@@ -262,6 +263,7 @@
       localStorage.setItem(LS.brackets, JSON.stringify(state.brackets));
       localStorage.setItem(LS.bracketId, state.bracketId);
     } catch (e) { /* quota */ }
+    cloudMarkDirty('результат матча');
   }
   function bracketState(id) {
     if (!state.brackets[id]) {
@@ -290,6 +292,7 @@
   }
   function saveRosterEdits() {
     try { localStorage.setItem(LS.roster, JSON.stringify(state.rosterEdits)); } catch (e) { /* quota */ }
+    cloudMarkDirty('состав сетки');
   }
   /* База — ответы формы, _base не даёт правкам «съесть» друг друга. */
   function applyRosterEdits() {
@@ -309,6 +312,7 @@
     return ((p && (p._base || p.disciplines)) || []).slice();
   }
   function rosterToggle(playerId, discId) {
+    if (guardReadonly('Состав сетки меняет админ.')) return null;
     var p = playerById(playerId);
     if (!p || !discById(discId)) return null;
     var base = baseDisciplines(p);
@@ -372,6 +376,476 @@
     base = String(base).replace(/[?#].*$/, '');
     var code = rosterCode();
     return base + (code ? '?r=' + code : '') + '#bracket';
+  }
+
+  /* ══════════════════ облако: общие результаты для всех ══════════════════
+     Сайт статический, поэтому «сервер» — файл data/live-state.json в этом же
+     репозитории. Читают его все (публично), а пишут только админы: у них в
+     браузере лежит GitHub-токен с правом contents:write на этот репозиторий.
+     Токен никогда не попадает в код и не уходит никуда, кроме api.github.com. */
+  var CLOUD = {
+    cfgKey: 'gamepiada-cloud-v1',
+    cfg: { owner: 'SSGSSBEx1080', repo: 'TOURNAMENTS', branch: 'main', path: 'data/live-state.json', token: '', login: '' },
+    status: {
+      mode: 'local',      /* local | live | readonly */
+      rev: 0,
+      updatedAt: '',
+      updatedBy: '',
+      syncing: false,
+      error: '',
+      checkedAt: 0,
+      dirty: false
+    },
+    admins: [],
+    log: [],
+    timer: null,
+    pollTimer: null,
+    applying: false
+  };
+  var CLOUD_API = 'https://api.github.com';
+
+  function cloudLoadCfg() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(CLOUD.cfgKey) || 'null');
+      if (raw && typeof raw === 'object') {
+        ['owner', 'repo', 'branch', 'path', 'token', 'login'].forEach(function (k) {
+          if (typeof raw[k] === 'string' && raw[k]) CLOUD.cfg[k] = raw[k];
+        });
+      }
+    } catch (e) { /* ignore */ }
+  }
+  function cloudSaveCfg() {
+    try { localStorage.setItem(CLOUD.cfgKey, JSON.stringify(CLOUD.cfg)); } catch (e) { /* quota */ }
+  }
+  function cloudHasToken() { return !!CLOUD.cfg.token; }
+  function cloudIsAdmin() { return cloudHasToken() && CLOUD.status.mode === 'live'; }
+  function cloudIsReadonly() { return CLOUD.status.mode === 'readonly'; }
+  function cloudReady() { return typeof fetch === 'function'; }
+
+  function cloudRepo() {
+    return CLOUD.cfg.owner + '/' + CLOUD.cfg.repo;
+  }
+  function cloudFileUrl() {
+    return CLOUD_API + '/repos/' + cloudRepo() + '/contents/' + CLOUD.cfg.path.split('/').map(encodeURIComponent).join('/');
+  }
+  function cloudHeaders(withAuth) {
+    var h = { 'Accept': 'application/vnd.github+json' };
+    if (withAuth && cloudHasToken()) h['Authorization'] = 'Bearer ' + CLOUD.cfg.token;
+    return h;
+  }
+  function b64encode(str) {
+    try { return btoa(unescape(encodeURIComponent(str))); } catch (e) { return ''; }
+  }
+  function b64decode(str) {
+    try { return decodeURIComponent(escape(atob(String(str || '').replace(/\s+/g, '')))); } catch (e) { return ''; }
+  }
+
+  /* Локальное состояние в формате файла. */
+  function cloudExport() {
+    return {
+      schema: 1,
+      mode: 'live',
+      rev: CLOUD.status.rev || 0,
+      updatedAt: new Date().toISOString(),
+      updatedBy: CLOUD.cfg.login || 'admin',
+      admins: CLOUD.admins.slice(),
+      log: CLOUD.log.slice(0, 60),
+      brackets: JSON.parse(JSON.stringify(state.brackets || {})),
+      boards: JSON.parse(JSON.stringify(state.boards || {})),
+      roster: JSON.parse(JSON.stringify(state.rosterEdits || {}))
+    };
+  }
+  function cloudMerge(remote, local) {
+    var out = JSON.parse(JSON.stringify(remote || {}));
+    out.schema = 1;
+    out.mode = 'live';
+    out.admins = (local.admins && local.admins.length ? local.admins : (out.admins || [])).slice();
+    out.log = (local.log || []).concat(out.log || []).slice(0, 60);
+    /* круги: объединяем по каждому матчу, побеждает более свежая запись */
+    var brackets = {};
+    var rB = out.brackets || {}, lB = local.brackets || {};
+    Object.keys(rB).concat(Object.keys(lB)).forEach(function (id) {
+      if (brackets[id]) return;
+      var r = rB[id] || {}, l = lB[id] || {};
+      brackets[id] = {
+        seed: l.seed != null ? l.seed : r.seed,
+        winners: Object.assign({}, r.winners || {}, l.winners || {})
+      };
+    });
+    out.brackets = brackets;
+    var boards = {};
+    var rD = out.boards || {}, lD = local.boards || {};
+    Object.keys(rD).concat(Object.keys(lD)).forEach(function (id) {
+      if (boards[id]) return;
+      boards[id] = Object.assign({}, rD[id] || {}, lD[id] || {});
+    });
+    out.boards = boards;
+    out.roster = Object.assign({}, out.roster || {}, local.roster || {});
+    return out;
+  }
+
+  /* Применяем файл к сайту: сюда приходят и админ, и обычный зритель. */
+  function cloudApply(remote) {
+    if (!remote || typeof remote !== 'object') return false;
+    var rev = Number(remote.rev) || 0;
+    if (rev && rev < (CLOUD.status.rev || 0)) return false;
+    CLOUD.applying = true;
+    CLOUD.status.rev = rev;
+    CLOUD.status.updatedAt = remote.updatedAt || '';
+    CLOUD.status.updatedBy = remote.updatedBy || '';
+    CLOUD.admins = Array.isArray(remote.admins) ? remote.admins.slice(0, 20) : [];
+    CLOUD.log = Array.isArray(remote.log) ? remote.log.slice(0, 60) : [];
+    if (remote.brackets && typeof remote.brackets === 'object') state.brackets = remote.brackets;
+    if (remote.boards && typeof remote.boards === 'object') state.boards = remote.boards;
+    if (remote.roster && typeof remote.roster === 'object') state.rosterEdits = sanitizeRoster(remote.roster);
+    applyRosterEdits();
+    if (remote.mode === 'live') {
+      CLOUD.status.mode = cloudHasToken() ? 'live' : 'readonly';
+    } else {
+      CLOUD.status.mode = 'local';
+    }
+    CLOUD.status.checkedAt = Date.now();
+    CLOUD.status.error = '';
+    CLOUD.applying = false;
+    renderAll();
+    renderCloudUI();
+    return true;
+  }
+
+  function cloudFetchState(useAuth) {
+    if (!cloudReady()) return Promise.reject(new Error('no fetch'));
+    var url = cloudFileUrl();
+    if (useAuth && cloudHasToken()) {
+      return fetch(url + '?ref=' + encodeURIComponent(CLOUD.cfg.branch), { headers: cloudHeaders(true), cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 404) return null;
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (meta) {
+          if (!meta) return { data: null, sha: null };
+          var text = b64decode(meta.content);
+          var data = text ? JSON.parse(text) : null;
+          return { data: data, sha: meta.sha || null };
+        });
+    }
+    var plain = CLOUD.cfg.path + '?t=' + Date.now();
+    return fetch(plain, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { return { data: data, sha: null }; });
+  }
+
+  function cloudPull(silent) {
+    if (!cloudReady()) return Promise.resolve(false);
+    return cloudFetchState(false)
+      .then(function (res) {
+        if (!res || !res.data) return false;
+        return cloudApply(res.data);
+      })
+      .catch(function (e) {
+        CLOUD.status.error = String(e && e.message || e);
+        renderCloudUI();
+        if (!silent) toast('Не удалось прочитать общие результаты: ' + esc(CLOUD.status.error), '📡');
+        return false;
+      });
+  }
+
+  function cloudLog(text) {
+    CLOUD.log.unshift({ at: new Date().toISOString(), by: CLOUD.cfg.login || 'admin', text: text });
+    CLOUD.log = CLOUD.log.slice(0, 60);
+  }
+
+  function cloudPush(reason, silent) {
+    if (!cloudHasToken() || !cloudReady()) return Promise.resolve(false);
+    if (CLOUD.status.syncing) { CLOUD.status.dirty = true; return Promise.resolve(false); }
+    CLOUD.status.syncing = true;
+    CLOUD.status.dirty = false;
+    renderCloudUI();
+    var sha = null;
+    var url = cloudFileUrl();
+    return fetch(url + '?ref=' + encodeURIComponent(CLOUD.cfg.branch), { headers: cloudHeaders(true), cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (meta) {
+        var remote = null;
+        if (meta) {
+          sha = meta.sha;
+          var text = b64decode(meta.content);
+          try { remote = text ? JSON.parse(text) : null; } catch (e) { remote = null; }
+        }
+        if (reason) cloudLog(reason);
+        var next = cloudMerge(remote || {}, cloudExport());
+        next.rev = Math.max(Number(remote && remote.rev) || 0, CLOUD.status.rev || 0) + 1;
+        next.updatedAt = new Date().toISOString();
+        next.updatedBy = CLOUD.cfg.login || 'admin';
+        next.mode = 'live';
+        var body = {
+          message: 'state: ' + (reason || 'обновление результатов') + ' (rev ' + next.rev + ')',
+          content: b64encode(JSON.stringify(next, null, 2)),
+          branch: CLOUD.cfg.branch
+        };
+        if (sha) body.sha = sha;
+        return fetch(url, {
+          method: 'PUT',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, cloudHeaders(true)),
+          body: JSON.stringify(body)
+        });
+      })
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + String(t).slice(0, 120)); });
+        /* локально сразу приводим состояние к опубликованному */
+        CLOUD.status.rev = (CLOUD.status.rev || 0) + 1;
+        CLOUD.status.mode = 'live';
+        CLOUD.status.updatedAt = new Date().toISOString();
+        CLOUD.status.updatedBy = CLOUD.cfg.login || 'admin';
+        CLOUD.status.error = '';
+        CLOUD.status.checkedAt = Date.now();
+        return true;
+      })
+      .catch(function (e) {
+        CLOUD.status.error = String(e && e.message || e);
+        if (!silent) toast('Не сохранилось в облако: ' + esc(CLOUD.status.error), '⚠️');
+        return false;
+      })
+      .then(function (ok) {
+        CLOUD.status.syncing = false;
+        renderCloudUI();
+        if (CLOUD.status.dirty && ok) { CLOUD.status.dirty = false; cloudPush(null, true); }
+        return ok;
+      });
+  }
+
+  /* Любое изменение результатов → отложенная публикация. */
+  function cloudMarkDirty(reason) {
+    if (!cloudHasToken()) { if (CLOUD.status.mode === 'live') renderCloudUI(); return; }
+    if (CLOUD.applying) return;
+    CLOUD.status.dirty = true;
+    if (reason) cloudLog(reason);
+    renderCloudUI();
+    if (CLOUD.timer) clearTimeout(CLOUD.timer);
+    CLOUD.timer = setTimeout(function () { CLOUD.timer = null; cloudPush(null, true); }, 900);
+  }
+
+  /* Проверяем токен: кто это и есть ли право писать. */
+  function cloudVerifyToken() {
+    if (!cloudReady()) return Promise.reject(new Error('нет fetch'));
+    return fetch(CLOUD_API + '/user', { headers: cloudHeaders(true), cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('токен не принят (HTTP ' + r.status + ')');
+        return r.json();
+      })
+      .then(function (u) {
+        CLOUD.cfg.login = u.login || 'admin';
+        cloudSaveCfg();
+        return fetch(cloudFileUrl(), { headers: cloudHeaders(true), cache: 'no-store' })
+          .then(function (r) { return { perm: r.ok ? r.json() : null, status: r.status }; })
+          .then(function (x) {
+            var canWrite = !!(x.perm && (x.perm.permissions ? x.perm.permissions.push : true));
+            return { login: CLOUD.cfg.login, canWrite: canWrite, status: x.status };
+          });
+      });
+  }
+
+  function cloudGoLive() {
+    if (!cloudHasToken()) { toast('Сначала вставь токен администратора', '🔑'); return Promise.resolve(false); }
+    return cloudVerifyToken().then(function (u) {
+      if (!u.canWrite) throw new Error('у токена нет права contents:write на этот репозиторий');
+      if (CLOUD.admins.indexOf(u.login) < 0) CLOUD.admins.unshift(u.login);
+      CLOUD.status.mode = 'live';
+      cloudLog('включил общий режим');
+      return cloudPush('включил общий режим', false).then(function (ok) {
+        renderAll(); renderCloudUI();
+        if (ok) toast('Общий режим включён: изменения видят все, кто откроет сайт', '🌍');
+        return ok;
+      });
+    }).catch(function (e) {
+      CLOUD.status.error = String(e && e.message || e);
+      renderCloudUI();
+      toast('Не получилось: ' + esc(CLOUD.status.error), '⚠️');
+      return false;
+    });
+  }
+
+  function cloudDisconnect() {
+    CLOUD.cfg.token = '';
+    CLOUD.cfg.login = '';
+    cloudSaveCfg();
+    CLOUD.status.mode = 'local';
+    CLOUD.status.error = '';
+    renderCloudUI();
+    toast('Токен убран из этого браузера. Общие результаты остались на сайте.', '🔓');
+  }
+
+  function cloudAddAdmin(login) {
+    var l = String(login || '').trim().replace(/^@/, '');
+    if (!l) return false;
+    if (!/^[A-Za-z0-9-]{1,39}$/.test(l)) { toast('GitHub-логин: латиница, цифры и дефис', '⚠️'); return false; }
+    if (CLOUD.admins.indexOf(l) < 0) CLOUD.admins.push(l);
+    cloudMarkDirty('назначил админом ' + l);
+    renderCloudUI();
+    return true;
+  }
+  function cloudRemoveAdmin(login) {
+    CLOUD.admins = CLOUD.admins.filter(function (x) { return x !== login; });
+    cloudMarkDirty('снял админа ' + login);
+    renderCloudUI();
+  }
+
+  /* ── админка: вход по токену, админы, журнал, бэкап ────────────────── */
+  function cloudBadgeHtml() {
+    var cls = cloudIsAdmin() ? 'is-live' : (cloudIsReadonly() ? 'is-read' : 'is-local');
+    var icon = cloudIsAdmin() ? '🌍' : (cloudIsReadonly() ? '👁' : '💾');
+    var label = cloudIsAdmin() ? 'общие результаты' : (cloudIsReadonly() ? 'только чтение' : 'локально');
+    return '<button class="cloud-chip ' + cls + '" type="button" data-action="cloud-panel" title="' + esc(cloudStatusText()) + '">' +
+      '<span aria-hidden="true">' + icon + '</span><span>' + label + '</span>' +
+      (cloudIsAdmin() ? '<b>' + esc(CLOUD.cfg.login || '') + '</b>' : '') +
+      '</button>';
+  }
+  function renderCloudUI() {
+    var chip = $('#cloud-chip');
+    if (chip) chip.innerHTML = cloudBadgeHtml();
+    var foot = $('#cloud-foot');
+    if (foot) foot.textContent = cloudStatusText();
+    var badge = $('#cloud-mode');
+    if (badge) {
+      badge.className = 'admin-status ' + (cloudIsAdmin() ? 'is-live' : (cloudIsReadonly() ? 'is-read' : 'is-local'));
+      badge.textContent = cloudStatusText();
+    }
+    document.body.classList.toggle('is-readonly', cloudIsReadonly());
+    var ro = cloudIsReadonly();
+    $$('#bracket-actions [data-action], #board-actions [data-action], [data-action="roster-edit"], [data-action="matrix-edit"], [data-action="roster-reset-all"], [data-action="roster-reset-disc"]').forEach(function (b) {
+      if (ro) {
+        b.setAttribute('disabled', 'disabled');
+        b.setAttribute('title', 'Менять результаты может только админ');
+      } else if (b.getAttribute('title') === 'Менять результаты может только админ') {
+        b.removeAttribute('disabled');
+        b.removeAttribute('title');
+      }
+    });
+  }
+
+  function cloudLogHtml() {
+    if (!CLOUD.log.length) return '<div class="admin-empty">Пока пусто — тут появятся записи о том, кто что менял.</div>';
+    return '<div class="admin-log">' + CLOUD.log.slice(0, 12).map(function (x) {
+      return '<div class="admin-log-row"><span class="al-who">' + esc(x.by || '—') + '</span>' +
+        '<span class="al-what">' + esc(x.text || '') + '</span>' +
+        '<span class="al-at">' + esc(clockShort(x.at)) + '</span></div>';
+    }).join('') + '</div>';
+  }
+
+  function adminModal() {
+    var admins = CLOUD.admins.length ? CLOUD.admins.map(function (a) {
+      return '<span class="admin-tag' + (a === CLOUD.cfg.login ? ' is-me' : '') + '">' + esc(a) +
+        '<button type="button" data-action="admin-remove" data-login="' + esc(a) + '" aria-label="Снять админа ' + esc(a) + '">×</button></span>';
+    }).join('') : '<span class="admin-empty">Список пуст — добавь свой GitHub-логин, когда включишь общий режим.</span>';
+    var tokenLine = cloudHasToken()
+      ? '<div class="admin-token"><b>Токен подключён</b><span>' + esc(CLOUD.cfg.login || 'не проверен') + ' · ' + esc(CLOUD.cfg.owner + '/' + CLOUD.cfg.repo) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-logout">Выйти</button></div>'
+      : '<label class="admin-field"><span>Токен администратора (GitHub)</span>' +
+        '<input type="password" id="cloud-token" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>' +
+        '<div class="admin-hint">Токен хранится только в этом браузере и уходит исключительно на <b>api.github.com</b>. В код сайта он не попадает — посетители его не видят.</div>';
+    tokenLine += '<details class="admin-help"><summary>Где взять токен — 6 шагов</summary><ol>' +
+          '<li>Открой <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> (нужен вход в GitHub).</li>' +
+          '<li><b>Token name</b> — любой, например <b>gamepiada-admin</b>.</li>' +
+          '<li><b>Expiration</b> — поставь «Custom» и дату подольше (например, через год).</li>' +
+          '<li><b>Repository access</b> → <b>Only select repositories</b> → выбери <b>' + esc(CLOUD.cfg.repo) + '</b>.</li>' +
+          '<li><b>Permissions</b> → <b>Repository permissions</b> → <b>Contents</b> → <b>Read and write</b>. Больше ничего не нужно.</li>' +
+      '<li>Нажми <b>Generate token</b> и скопируй строку (начинается с <b>github_pat_</b>). Вставь её в поле выше и нажми Enter.</li>' +
+      '</ol><p>Токен = ключ админа. Чтобы назначить друга: добавь его в <b>Settings → Collaborators</b> репозитория (доступ Write), пусть он создаст свой такой же токен и вставит в админке на своём устройстве.</p></details>';
+
+    var html = '<div class="md-hero" style="--a:#7fe9ff;--b:#b18bff">' +
+        '<span class="md-icon" aria-hidden="true">🛡️</span>' +
+        '<div><span class="md-kicker">админка турнира</span>' +
+        '<h3 class="md-title">Кто вносит результаты</h3>' +
+        '<div class="md-sub">Общий режим: изменения сохраняются в файл на сайте и сразу видны всем. Остальные смотрят только чтение.</div></div></div>' +
+      '<div class="admin-status ' + (cloudIsAdmin() ? 'is-live' : (cloudIsReadonly() ? 'is-read' : 'is-local')) + '" id="cloud-mode">' + esc(cloudStatusText()) + '</div>' +
+      '<div class="admin-block"><h4>Доступ</h4>' + tokenLine +
+        '<div class="admin-actions">' +
+          (cloudHasToken() ? '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-sync">Синхронизировать</button>' : '') +
+          (cloudHasToken() ? '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-verify">Проверить токен</button>' : '') +
+          (cloudHasToken() && !cloudIsAdmin() ? '<button class="btn btn-primary btn-sm" type="button" data-action="cloud-go-live">Включить общий режим</button>' : '') +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-pull">Прочитать с сервера</button>' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="cloud-backup">Скачать бэкап</button>' +
+          '<label class="btn btn-ghost btn-sm admin-upload">Загрузить бэкап<input type="file" id="cloud-import" accept="application/json,.json" hidden></label>' +
+        '</div>' +
+        (CLOUD.status.error ? '<div class="admin-error">' + esc(CLOUD.status.error) + '</div>' : '') +
+      '</div>' +
+      '<div class="admin-block"><h4>Админы <span>' + CLOUD.admins.length + '</span></h4>' +
+        '<div class="admin-tags">' + admins + '</div>' +
+        (cloudIsAdmin() ? '<div class="admin-add"><input type="text" id="admin-login" placeholder="github-логин друга" autocomplete="off" spellcheck="false">' +
+          '<button class="btn btn-primary btn-sm" type="button" data-action="admin-add">Назначить</button></div>' +
+          '<div class="admin-hint">Админ = у него есть свой GitHub-токен с доступом к репозиторию (и он добавлен коллаборатором). Список здесь — для журнала и порядка.</div>' : '') +
+      '</div>' +
+      '<div class="admin-block"><h4>Журнал</h4>' + cloudLogHtml() + '</div>' +
+      '<div class="md-actions"><button class="btn btn-primary" type="button" data-action="close-modal">Готово</button></div>';
+    openModal(html);
+  }
+
+  function refreshAdminModal() {
+    var modal = $('#modal');
+    if (!modal || modal.hidden) return;
+    if (!$('#cloud-mode')) return;
+    adminModal();
+  }
+
+  function cloudBackup() {
+    try {
+      var blob = new Blob([JSON.stringify(cloudExport(), null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'gamepiada-state-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      toast('Бэкап результатов скачан', '💾');
+    } catch (e) { toast('Браузер не дал сохранить файл', '⚠️'); }
+  }
+
+  function cloudImportFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var obj = JSON.parse(String(reader.result || '{}'));
+        if (!obj || typeof obj !== 'object') throw new Error('не JSON');
+        obj.rev = (CLOUD.status.rev || 0) + 1;
+        obj.mode = 'live';
+        obj.updatedAt = new Date().toISOString();
+        obj.updatedBy = CLOUD.cfg.login || 'admin';
+        cloudLog('загрузил бэкап');
+        cloudApply(JSON.parse(JSON.stringify(obj)));
+        if (cloudHasToken()) cloudPush('загрузил бэкап', false);
+        toast('Бэкап применён', '📥');
+      } catch (e) { toast('Файл не подошёл: ' + esc(e.message), '⚠️'); }
+    };
+    reader.readAsText(file);
+  }
+
+  /* Чужие клики: результаты вносит админ, зритель только смотрит. */
+  function guardReadonly(what) {
+    if (!cloudIsReadonly()) return false;
+    toast('Результаты вносит админ. ' + (what || 'Смотреть можно всем, менять — нет.'), '🔒');
+    return true;
+  }
+
+  function cloudStatusText() {
+    if (CLOUD.status.syncing) return 'сохраняю…';
+    if (cloudIsAdmin()) {
+      return 'общие результаты · обновлено ' + clockShort(CLOUD.status.updatedAt) + (CLOUD.status.dirty ? ' · есть несохранённое' : '');
+    }
+    if (cloudIsReadonly()) return 'общие результаты · только чтение';
+    if (cloudHasToken()) return 'токен есть, общий режим не включён';
+    return 'локальный режим · правки видны только в этом браузере';
+  }
+  function clockShort(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    try {
+      return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(d);
+    } catch (e) { return d.toISOString().slice(11, 16); }
   }
 
   function confirmedDuos() {
@@ -1049,6 +1523,7 @@
   }
 
   function boardPick(key) {
+    if (guardReadonly('Подиум заезда собирает админ.')) return;
     var d = discById(state.bracketId);
     if (!d || !isBoard(d)) return;
     var st = boardState(d.id);
@@ -1074,6 +1549,7 @@
   }
 
   function boardAuto() {
+    if (guardReadonly('Подиум собирает админ.')) return;
     var d = discById(state.bracketId);
     if (!d || !isBoard(d)) return;
     var keys = entrants(d).map(function (e) { return e.key; });
@@ -1094,6 +1570,7 @@
   }
 
   function boardReset() {
+    if (guardReadonly('Сбрасывает админ.')) return;
     var d = discById(state.bracketId);
     if (!d) return;
     state.boards[d.id] = { 1: '', 2: '', 3: '' };
@@ -1112,6 +1589,7 @@
     if (btn) { btn.disabled = false; if (btn.dataset.label) btn.innerHTML = btn.dataset.label; }
   }
   function autoBracket() {
+    if (guardReadonly('Автопрогноз запускает админ.')) return;
     var d = discById(state.bracketId);
     if (!d) return;
     if (isBoard(d)) { boardAuto(); return; }
@@ -1155,6 +1633,7 @@
   }
 
   function pickBracket(btn) {
+    if (guardReadonly('Результаты матчей вносит админ.')) return;
     var key = btn.getAttribute('data-key');
     var entrant = btn.getAttribute('data-entrant') || btn.getAttribute('data-player');
     if (!key || !entrant) return;
@@ -1805,6 +2284,7 @@
     { name: 'Случайный боец', type: 'Действие', icon: '🎯', hint: 'рандом', run: function () { randomPlayer(); } },
     { name: 'Случайное дуо', type: 'Действие', icon: '🧬', hint: 'рандом', run: function () { randomDuo(); } },
     { name: 'Автопрогноз круговой', type: 'Действие', icon: '⚡', hint: 'круговая', run: function () { autoBracket(); } },
+    { name: 'Админка: кто вносит результаты', type: 'Действие', icon: '🛡️', hint: 'доступ', run: function () { adminModal(); } },
     { name: 'Кто в какой сетке', type: 'Действие', icon: '👥', hint: 'состав', run: function () { rosterModal(state.bracketId); } },
     { name: 'Правка состава в матрице', type: 'Действие', icon: '✎', hint: 'матрица', run: function () { state.matrixEdit = true; renderMatrixMode(); var m = $('#roster'); if (m) m.scrollIntoView({ behavior: 'smooth' }); } },
     { name: 'Пересобрать раунды', type: 'Действие', icon: '🔀', hint: 'круговая', run: function () { shuffleBracket(); } },
@@ -1904,6 +2384,7 @@
     }
   }
   function shuffleBracket() {
+    if (guardReadonly('Пересобирает раунды админ.')) return;
     cancelAuto();
     var d = discById(state.bracketId);
     if (!d) return;
@@ -1917,6 +2398,7 @@
     toast('Раунды «' + esc(d.name) + ' ' + esc(d.mode) + '» пересобраны', '🔀');
   }
   function resetBracket() {
+    if (guardReadonly('Сбрасывает админ.')) return;
     cancelAuto();
     var d = discById(state.bracketId);
     if (!d) return;
@@ -2210,6 +2692,7 @@
     renderWishes();
     renderJoin();
     renderHeroNow();
+    renderCloudUI();
     tickClocks();
   }
 
@@ -2254,19 +2737,44 @@
         sound(state.matrixEdit ? 660 : 420, 0.05, 'triangle', 0.03);
         if (state.matrixEdit) toast('Правка состава: клик по точке добавляет или убирает бойца из сетки', '👥');
         break;
+      case 'cloud-panel': adminModal(); break;
+      case 'cloud-go-live': cloudGoLive(); break;
+      case 'cloud-sync': cloudPush('ручная синхронизация', false); break;
+      case 'cloud-pull':
+        cloudPull(false).then(function (ok) {
+          if (ok) { toast('Прочитал общие результаты (rev ' + CLOUD.status.rev + ')', '🌍'); refreshAdminModal(); }
+        });
+        break;
+      case 'cloud-logout': cloudDisconnect(); refreshAdminModal(); break;
+      case 'cloud-verify':
+        cloudVerifyToken().then(function (u) {
+          toast('Токен рабочий: <b>' + esc(u.login) + '</b>' + (u.canWrite ? ' · может писать' : ' · только чтение репозитория'), u.canWrite ? '🔑' : '⚠️');
+          renderCloudUI(); refreshAdminModal();
+        }).catch(function (e) { toast('Токен не подошёл: ' + esc(e.message), '⚠️'); });
+        break;
+      case 'cloud-backup': cloudBackup(); break;
+      case 'admin-add': {
+        var inp = $('#admin-login');
+        if (inp && cloudAddAdmin(inp.value)) { inp.value = ''; refreshAdminModal(); toast('Админ добавлен — не забудь синхронизировать', '🛡️'); }
+        break;
+      }
+      case 'admin-remove': if (el && el.dataset.login) { cloudRemoveAdmin(el.dataset.login); refreshAdminModal(); } break;
       case 'roster-reset-disc':
+        if (guardReadonly('Сброс состава делает админ.')) break;
         resetRosterDisc(state.bracketId);
         renderAll();
         sound(380, 0.06, 'sine', 0.03);
         toast('Состав этой сетки вернулся к ответам формы', '↺');
         break;
       case 'roster-reset-all':
+        if (guardReadonly('Сброс состава делает админ.')) break;
         resetRoster();
         renderAll();
         sound(380, 0.06, 'sine', 0.03);
         toast('Состав вернулся к ответам формы', '↺');
         break;
       case 'roster-reset-current':
+        if (guardReadonly('Сброс состава делает админ.')) break;
         if (state.rosterModal && state.rosterModal.mode === 'disc') resetRosterDisc(state.rosterModal.id);
         else if (state.rosterModal) resetRoster(state.rosterModal.id);
         else resetRoster();
@@ -2465,8 +2973,36 @@
     else if (e.target.id === 'roster-search') { state.rosterQuery = e.target.value; renderRoster(); }
     else if (e.target.id === 'palette-input') { state.paletteIndex = 0; renderPalette(); }
     else if (e.target.id === 'roster-modal-search' && state.rosterModal) { state.rosterModal.query = e.target.value; refreshRosterModal(); }
+    else if (e.target.id === 'cloud-token') { CLOUD.cfg.token = e.target.value.trim(); cloudSaveCfg(); }
+    else if (e.target.id === 'admin-login') { /* значение читаем по кнопке */ }
   });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    if (e.target && e.target.id === 'cloud-token') {
+      e.preventDefault();
+      CLOUD.cfg.token = e.target.value.trim();
+      cloudSaveCfg();
+      cloudVerifyToken().then(function (u) {
+        toast('Токен рабочий: <b>' + esc(u.login) + '</b>' + (u.canWrite ? '' : ' · нет права на запись'), u.canWrite ? '🔑' : '⚠️');
+        refreshAdminModal();
+        renderCloudUI();
+        if (u.canWrite && !cloudIsAdmin()) cloudGoLive().then(refreshAdminModal);
+      }).catch(function (err) {
+        CLOUD.status.error = String(err && err.message || err);
+        toast('Токен не подошёл: ' + esc(CLOUD.status.error), '⚠️');
+        refreshAdminModal();
+      });
+      return;
+    }
+    if (e.target && e.target.id === 'admin-login') {
+      e.preventDefault();
+      var b = $('[data-action="admin-add"]');
+      if (b) b.click();
+    }
+  });
+
   document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'cloud-import') { cloudImportFile(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'bracket-select') setBracketDisc(e.target.value);
     else if (e.target.id === 'duo-a') { state.duoA = e.target.value; renderDuo(); sound(600, 0.04, 'sine', 0.02); }
     else if (e.target.id === 'duo-b') { state.duoB = e.target.value; renderDuo(); sound(640, 0.04, 'sine', 0.02); }
@@ -2555,8 +3091,30 @@
   })();
 
   /* boot */
+  /* Первый контакт с общим состоянием: читаем файл, потом раз в 25 секунд
+     подтягиваем свежее (только когда вкладка активна). */
+  function cloudBootstrap() {
+    cloudLoadCfg();
+    if (!cloudReady()) { renderCloudUI(); return; }
+    var load = cloudHasToken() && CLOUD.status.mode !== 'local'
+      ? cloudFetchState(true).then(function (res) { return res && res.data ? cloudApply(res.data) : cloudPull(true); })
+      : cloudPull(true);
+    load.catch(function () { /* офлайн — работаем на локальных данных */ });
+    if (CLOUD.pollTimer) clearInterval(CLOUD.pollTimer);
+    CLOUD.pollTimer = setInterval(function () {
+      if (document.hidden) return;
+      if (CLOUD.status.syncing) return;
+      if (CLOUD.status.dirty) return;
+      cloudPull(true);
+    }, 25000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && cloudReady() && !CLOUD.status.syncing) cloudPull(true);
+    });
+  }
+
   function init() {
     document.body.classList.toggle('is-muted', !state.sound);
+    cloudLoadCfg();
     var soundBtn = $('#sound-toggle');
     if (soundBtn) soundBtn.setAttribute('aria-pressed', String(state.sound));
     var year = $('#year'); if (year) year.textContent = String(new Date().getFullYear());
@@ -2577,13 +3135,30 @@
     tickClocks();
     /* в фоновой вкладке часы и статус не пересчитываем — экономим батарею */
     setInterval(function () { if (!document.hidden) tickClocks(); }, 1000);
+    cloudBootstrap();
     loadLive(false);
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () { /* ignore */ });
       });
     }
-    window.GP = { state: state, openDisc: discModal, openPlayer: playerModal, setDuo: setDuo, refresh: function () { loadLive(true); }, league: { tours: buildTours, standings: leagueStandings, totals: leagueTotals } };
+    window.GP = {
+      state: state,
+      openDisc: discModal,
+      openPlayer: playerModal,
+      setDuo: setDuo,
+      refresh: function () { loadLive(true); },
+      league: { tours: buildTours, standings: leagueStandings, totals: leagueTotals },
+      cloud: {
+        cfg: CLOUD.cfg, status: CLOUD.status,
+        exportState: cloudExport, apply: cloudApply, merge: cloudMerge,
+        pull: cloudPull, push: cloudPush, verify: cloudVerifyToken, goLive: cloudGoLive,
+        setToken: function (t) { CLOUD.cfg.token = t || ''; cloudSaveCfg(); renderCloudUI(); },
+        setMode: function (m) { CLOUD.status.mode = m; renderCloudUI(); },
+        admins: function () { return CLOUD.admins.slice(); },
+        addAdmin: cloudAddAdmin, log: function () { return CLOUD.log.slice(); }
+      }
+    };
     window.setTimeout(deepLink, 60);
   }
 
