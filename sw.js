@@ -1,8 +1,8 @@
-/* GAMEpiada · service worker v4.10 (полоса режима в стиле HUD)
+/* GAMEpiada · service worker v4.11 (синхронизация без откатов)
    Стратегия: навигация и JS/CSS — network-first (обновления приезжают сразу),
    картинки — cache-first, офлайн — из кеша.
    Данные Google Таблицы (gviz) и шрифты не кэшируются. */
-const VERSION = 'gamepiada-v4.10.0';
+const VERSION = 'gamepiada-v4.11.0';
 const CORE = [
   './',
   './index.html',

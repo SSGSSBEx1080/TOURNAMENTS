@@ -443,13 +443,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   chipSel.dispatchEvent(new window.Event('change', { bubbles: true }));
 
   // ── версия и принудительное обновление ─────────────────────────────
-  check('версия в подвале', /^v4\.10\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
+  check('версия в подвале', /^v4\.11\.0$/.test($('#site-version').textContent), $('#site-version').textContent);
   check('кнопка «обновить»', !!$('[data-action="force-refresh"]'), '');
   const cssSrc = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
   check('стили: полоса режима в HUD-стиле', /\.cloud-bar\{/.test(cssSrc) && /--cb-glow/.test(cssSrc) && /@keyframes cb-sweep/.test(cssSrc) && /\.cb-pill\.is-ok/.test(cssSrc) && /\.cloud-bar\[data-state="saving"\]/.test(cssSrc), 'HUD: кромка, блик, пилюля, прогресс');
   const rmBlock = (cssSrc.match(/@media \(prefers-reduced-motion: reduce\)\{[\s\S]*?\n\}/g) || []).filter((b) => /\.cloud-bar/.test(b))[0] || '';
   check('стили: анимации отключаются при reduced-motion', /\.cloud-bar/.test(rmBlock) && /animation:none/.test(rmBlock), rmBlock.replace(/\s+/g, ' ').slice(0, 60));
-  check('ассеты с версией', /styles\.css\?v=4\.10\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.10\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
+  check('ассеты с версией', /styles\.css\?v=4\.11\.0/.test($('link[rel="stylesheet"][href*="styles.css"]').getAttribute('href')) && /app\.js\?v=4\.11\.0/.test($('script[src*="app.js"]').getAttribute('src')), $('script[src*="app.js"]').getAttribute('src'));
 
   // ── счётчики не уходят в минус (rAF-таймстемп бывает раньше start) ─
   const pulseNums = $$('.pulse-num .count').map((el) => el.textContent.trim());
@@ -532,10 +532,68 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.GP.cloud.addAdmin('friend-login');
   check('админка: назначение админа', window.GP.cloud.admins().indexOf('friend-login') >= 0, window.GP.cloud.admins().join(','));
 
+  // ── синхронизация: правки не откатываются, результаты за парами ─────
+  const cloudBase = { schema: 1, rev: 30, mode: 'live', admins: ['boss'], log: [],
+    brackets: { dota11: { seed: 1, winners: { 'p2~p3': 'p2', 'p4~p5': 'p4' } } }, boards: {}, roster: { p2: { add: [], drop: ['dota11'] } } };
+  const cloudLocal = { schema: 1, rev: 30, mode: 'live', admins: ['boss'], log: [],
+    brackets: { dota11: { seed: 1, winners: { 'p2~p3': 'p2' } } }, boards: {}, roster: {} };
+  const cloudRemote = JSON.parse(JSON.stringify(cloudBase)); cloudRemote.rev = 31;
+  const threeWay = window.GP.cloud.merge(cloudRemote, cloudLocal, cloudBase);
+  check('синк: снятая правка состава не возвращается', !threeWay.roster.p2, JSON.stringify(threeWay.roster));
+  check('синк: снятая победа уходит из облака', !threeWay.brackets.dota11.winners['p4~p5'], JSON.stringify(threeWay.brackets.dota11.winners));
+  check('синк: чужая правка при этом остаётся', threeWay.brackets.dota11.winners['p2~p3'] === 'p2', JSON.stringify(threeWay.brackets.dota11.winners));
+  check('синк: без базы локальное поверх облачного', (function () {
+    const m = window.GP.cloud.merge(cloudRemote, cloudLocal);
+    return m.roster.p2 && m.brackets.dota11.winners['p2~p3'] === 'p2';
+  })(), 'первый контакт');
+  check('синк: правка состава переживает свежий опрос', (function () {
+    window.GP.cloud.setToken('test-token');
+    window.GP.cloud.apply({ schema: 1, rev: 40, mode: 'live', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: {}, boards: {}, roster: { p2: { add: [], drop: ['dota11'] } } });
+    const off = window.GP.state.players.filter((p) => p.disciplines.indexOf('dota11') >= 0).length;
+    window.GP.cloud.status.dirty = false;
+    const chip = $('#roster-inline .ri-chip[data-roster-player="p2"]');
+    if (chip) chip.click();
+    const on = window.GP.state.players.filter((p) => p.disciplines.indexOf('dota11') >= 0).length;
+    window.GP.cloud.status.dirty = false;
+    window.GP.cloud.apply({ schema: 1, rev: 41, mode: 'live', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: {}, boards: {}, roster: { p2: { add: [], drop: ['dota11'] } } });
+    const after = window.GP.state.players.filter((p) => p.disciplines.indexOf('dota11') >= 0).length;
+    return on === off + 1 && after === on;
+  })(), 'опрос не снимает добавленного бойца');
+
+  // результаты держатся за парой игроков, а не за ячейкой раскладки
+  window.GP.cloud.setToken('test-token');
+  window.GP.cloud.setMode('live');
+  window.GP.cloud.apply({ schema: 1, rev: 45, mode: 'live', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: {}, boards: {}, roster: {} });
+  const matchRow = $('#bracket-board .rr-row[data-entrant]');
+  const pairKeyAttr = matchRow.getAttribute('data-key');
+  const pairIds = String(pairKeyAttr).split('~');
+  matchRow.click();
+  const winsBefore = qa('#bracket-board .rr-row.is-winner');
+  check('матч: ключ — пара игроков', /~/.test(pairKeyAttr) && pairIds.length === 2, pairKeyAttr);
+  const chipOut = $('#roster-inline .ri-chip[data-roster-player="' + pairIds[0] + '"]');
+  if (chipOut) chipOut.click();
+  const winsWithout = qa('#bracket-board .rr-row.is-winner');
+  const chipBack = $('#roster-inline .ri-chip[data-roster-player="' + pairIds[0] + '"]');
+  if (chipBack) chipBack.click();
+  const winsBack = qa('#bracket-board .rr-row.is-winner');
+  check('результат: остаётся за парой при смене состава', winsBefore >= 1 && winsWithout < winsBefore && winsBack === winsBefore, winsBefore + ' → ' + winsWithout + ' → ' + winsBack);
+
+  // ошибка сохранения видна и лечится кнопкой «Повторить»
+  window.GP.cloud.status.error = 'HTTP 409 конфликт версий';
+  window.GP.cloud.status.dirty = true;
+  window.GP.cloud.apply({ schema: 1, rev: 46, mode: 'live', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: {}, boards: {}, roster: {} });
+  check('сохранение: ошибка видна в полосе', $('#cloud-chip .cloud-bar').getAttribute('data-state') === 'error' && !!$('#cloud-chip .cb-pill.is-error') && !!$('[data-action="cloud-retry"]'), $('#cloud-chip .cb-pill') ? $('#cloud-chip .cb-pill').textContent : '');
+  window.GP.cloud.status.error = '';
+  window.GP.cloud.status.dirty = false;
+  window.GP.cloud.apply({ schema: 1, rev: 47, mode: 'live', updatedAt: new Date().toISOString(), admins: ['boss'], log: [], brackets: {}, boards: {}, roster: {} });
+  check('сохранение: после успеха ошибка снята', $('#cloud-chip .cloud-bar').getAttribute('data-state') !== 'error' && !$('#cloud-chip .cb-pill.is-error'), $('#cloud-chip .cloud-bar').getAttribute('data-state'));
+
   // полоса режима: зритель видит «войти», админ — «можно менять»
   window.GP.cloud.setToken('');
   window.GP.cloud.status.dirty = false;
-  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 20, updatedAt: new Date().toISOString(), admins: ['boss'], log: [{ at: new Date().toISOString(), by: 'boss', text: 'включил общий режим' }], brackets: {}, boards: {}, roster: {} });
+  window.GP.cloud.status.error = '';
+  window.GP.cloud.status.savedAt = 0;
+  window.GP.cloud.apply({ schema: 1, mode: 'live', rev: 90, updatedAt: new Date().toISOString(), admins: ['boss'], log: [{ at: new Date().toISOString(), by: 'boss', text: 'включил общий режим' }], brackets: {}, boards: {}, roster: {} });
   check('полоса: у зрителя свой стиль', !!$('#cloud-chip .cloud-bar.is-read') && /только чтение/.test($('#cloud-chip .cb-kicker').textContent) && $('#cloud-chip .cloud-bar').getAttribute('data-state') !== 'saving', $('#cloud-chip .cloud-bar').getAttribute('data-state'));
   check('полоса: зрителю предлагают войти', /только чтение/i.test($('#cloud-chip').textContent) && /Результаты вносит админ/.test($('#cloud-chip').textContent) && !!$('[data-action="admin-login"]'), $('#cloud-chip').textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
   // простой вход (пока зритель)
