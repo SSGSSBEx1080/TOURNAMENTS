@@ -990,6 +990,34 @@
     }
   }
 
+  /* Состав текущей сетки — всегда на виду, без модалок: чипы бойцов. */
+  function renderRosterInline(d) {
+    var host = $('#roster-inline');
+    if (!host || !d) return;
+    var list = state.players;
+    var onCount = participants(d).length;
+    var edits = rosterEditCount(d.id);
+    host.innerHTML = '<div class="ri-head">' +
+        '<div class="ri-title"><b>Кто играет в этой сетке</b>' +
+          '<span>' + onCount + ' из ' + list.length + ' · клик по бойцу — добавить или убрать</span></div>' +
+        '<div class="ri-tools">' +
+          (edits ? '<span class="ri-edited">правился вручную · ' + edits + ' ' + plural(edits, ['правка', 'правки', 'правок']) +
+            ' <button class="ri-link" type="button" data-action="roster-reset-disc">сбросить</button></span>' : '') +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="roster-edit"><span aria-hidden="true">🔎</span><span>Найти бойца</span></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ri-chips">' + list.map(function (p) {
+        var on = (p.disciplines || []).indexOf(d.id) >= 0;
+        return '<button class="ri-chip' + (on ? ' is-on' : '') + '" type="button" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+          ' data-roster-player="' + esc(p.id) + '" data-roster-disc="' + esc(d.id) + '"' +
+          ' title="' + esc(p.nick + ' — ' + (on ? 'убрать из сетки' : 'добавить в сетку')) + '">' +
+          '<span class="avatar" style="--c1:' + p.c1 + ';--c2:' + p.c2 + '"><span>' + esc(p.initials) + '</span></span>' +
+          '<span class="ri-nick">' + esc(p.nick) + '</span>' +
+          '<i class="ri-mark" aria-hidden="true">' + (on ? '✓' : '+') + '</i>' +
+          '</button>';
+      }).join('') + '</div>';
+  }
+
   function renderComp() {
     var d = discById(state.bracketId) || queue()[0];
     if (!d) return;
@@ -1010,6 +1038,7 @@
     var sel = $('#bracket-select');
     if (sel && sel.value !== d.id) sel.value = d.id;
     renderCompHead(d);
+    renderRosterInline(d);
     if (boardMode) {
       renderBoard(d);
       var champSlot = $('#champion-slot');
@@ -2223,6 +2252,12 @@
         sound(state.matrixEdit ? 660 : 420, 0.05, 'triangle', 0.03);
         if (state.matrixEdit) toast('Правка состава: клик по точке добавляет или убирает бойца из сетки', '👥');
         break;
+      case 'roster-reset-disc':
+        resetRosterDisc(state.bracketId);
+        renderAll();
+        sound(380, 0.06, 'sine', 0.03);
+        toast('Состав этой сетки вернулся к ответам формы', '↺');
+        break;
       case 'roster-reset-all':
         resetRoster();
         renderAll();
@@ -2250,8 +2285,38 @@
       case 'top': window.scrollTo({ top: 0, behavior: 'smooth' }); break;
       case 'open-champ': if (el && el.dataset.player) playerModal(el.dataset.player); break;
       case 'install': installApp(); break;
+      case 'force-refresh': forceRefresh(); break;
       default: break;
     }
+  }
+
+  /* Кеш и service worker иногда держат старую версию сайта — даём кнопку «Обновить». */
+  function forceRefresh() {
+    var done = function () {
+      var url = location.pathname + '?v=' + Date.now() + (location.hash || '');
+      location.replace(url);
+    };
+    try {
+      if (!('caches' in window) || !window.caches.keys) { done(); return; }
+      window.caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return window.caches['delete'](k); }));
+      }).then(function () {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistrations) { done(); return; }
+        return navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.unregister(); }));
+        });
+      }).then(done).catch(done);
+    } catch (e) { done(); }
+  }
+
+  /* Новая версия service worker'а встала на место — перезагружаемся один раз,
+     чтобы страница точно работала на свежих JS/CSS. */
+  if ('serviceWorker' in navigator && navigator.serviceWorker.addEventListener) {
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; }
+      location.reload();
+    });
   }
 
   var deferredPrompt = null;
@@ -2512,7 +2577,7 @@
     loadLive(false);
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function () { /* ignore */ });
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () { /* ignore */ });
       });
     }
     window.GP = { state: state, openDisc: discModal, openPlayer: playerModal, setDuo: setDuo, refresh: function () { loadLive(true); }, league: { tours: buildTours, standings: leagueStandings, totals: leagueTotals } };
