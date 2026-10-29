@@ -1,13 +1,18 @@
 {
   "schema": 1,
   "mode": "live",
-  "rev": 56,
-  "updatedAt": "2026-10-29T05:21:59.281Z",
+  "rev": 57,
+  "updatedAt": "2026-10-29T05:22:26.762Z",
   "updatedBy": "SSGSSBEx1080",
   "admins": [
     "SSGSSBEx1080"
   ],
   "log": [
+    {
+      "at": "2026-10-29T05:22:26.762Z",
+      "by": "SSGSSBEx1080",
+      "text": "ручная синхронизация"
+    },
     {
       "at": "2026-10-29T05:21:57.650Z",
       "by": "SSGSSBEx1080",
