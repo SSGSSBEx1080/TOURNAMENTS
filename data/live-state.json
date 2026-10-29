@@ -1,13 +1,18 @@
 {
   "schema": 1,
   "mode": "live",
-  "rev": 55,
-  "updatedAt": "2026-10-29T05:21:00.393Z",
+  "rev": 56,
+  "updatedAt": "2026-10-29T05:21:59.281Z",
   "updatedBy": "SSGSSBEx1080",
   "admins": [
     "SSGSSBEx1080"
   ],
   "log": [
+    {
+      "at": "2026-10-29T05:21:57.650Z",
+      "by": "SSGSSBEx1080",
+      "text": "результат матча"
+    },
     {
       "at": "2026-10-29T05:20:24.138Z",
       "by": "SSGSSBEx1080",
